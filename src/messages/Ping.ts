@@ -17,11 +17,3 @@ export const Ping: Peer.MessageType<Ping> = {
 		};
 	},
 };
-
-export const PingHandler: Message<Ping> = {
-	type: Ping,
-	async handler({ peer, data }) {
-		peer.log(`🏓 Received ping → responding with pong`);
-		await peer.send(Pong, { nonce: data.nonce });
-	},
-};

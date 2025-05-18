@@ -21,10 +21,3 @@ export const SendCmpct: Peer.MessageType<SendCmpct> = {
 		};
 	},
 };
-
-export const SendCmpctHandler: Message<SendCmpct> = {
-	type: SendCmpct,
-	async handler({ peer, data }) {
-		peer.log(`📦 Received sendcmpct → announce=${data.announce}, version=${data.version}`);
-	},
-};

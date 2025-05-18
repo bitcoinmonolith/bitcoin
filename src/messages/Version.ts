@@ -100,11 +100,3 @@ export const Version: Peer.MessageType<Version> = {
 		};
 	},
 };
-
-export const VersionHandler: Message<Version> = {
-	type: Version,
-	async handler({ peer, data }) {
-		peer.log(`🤝 Received version: v${data.version}, ua=${data.userAgent}`);
-		await peer.send(Verack, {});
-	},
-};

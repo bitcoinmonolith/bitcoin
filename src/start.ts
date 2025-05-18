@@ -1,17 +1,11 @@
+import dns from "dns/promises";
 import { BasicBlockValidator } from "~/BasicBlockValidator.js";
 import { MemoryBlockStore } from "~/MemoryBlockStore.js";
 import { MemoryChain } from "~/MemoryChain.js";
 import { Bitcoin } from "./Bitcoin.js";
-import { GetHeadersHandler } from "./messages/GetHeaders.js";
-import { Ping, PingHandler } from "./messages/Ping.js";
-import { SendCmpctHandler } from "./messages/SendCmpct.js";
-import { Version, VersionHandler } from "./messages/Version.js";
-import { randomBytes } from "crypto";
 import { Peer } from "./Peers.js";
-import { Pong } from "./messages/Pong.js";
-import dns from "dns/promises";
 import { SendHeaders } from "./messages/SendHeaders.js";
-import { Verack } from "./messages/Verack.js";
+import { GetHeadersHandler, handshake, ping, PingHandler, SendCmpctHandler, VersionHandler } from "./protocols.js";
 
 const TESTNET_MAGIC = Buffer.from("0b110907", "hex");
 const TESTNET_DNS_SEEDS = [
@@ -53,33 +47,5 @@ const bitcoin = new Bitcoin({
 	},
 	async onTick(ctx) {},
 });
-
-export async function ping(ctx: Bitcoin, peer: Peer) {
-	const nonce = randomBytes(8).readBigUInt64LE(0);
-	await peer.send(Ping, { nonce });
-	await ctx.expect(peer, Pong, (pong) => pong.nonce === nonce);
-	peer.log("🏓 Pong received");
-}
-
-export async function handshake(ctx: Bitcoin, peer: Peer) {
-	const versionData: Version = {
-		version: 70015,
-		services: 1n,
-		timestamp: BigInt(Math.floor(Date.now() / 1000)),
-		recvServices: 1n,
-		recvPort: 18333,
-		transServices: 1n,
-		transPort: 18333,
-		nonce: 987654321n,
-		userAgent: "/Satoshi:MyCustomNode:0.2/",
-		startHeight: 150000,
-		relay: true,
-	};
-
-	await peer.send(Version, versionData);
-	peer.log(`📗 Sent version`);
-	await ctx.expect(peer, Verack, () => true);
-	peer.log(`✅ Handshake complete`);
-}
 
 await bitcoin.start();
