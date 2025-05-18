@@ -1,7 +1,5 @@
-import { Message, Bitcoin } from "~/Bitcoin.js";
 import { Peer } from "~/Peers.js";
-import { writeBuffer, zeroPad16 } from "~/utils.js";
-import { Verack } from "./Verack.js";
+import { writeBuffer } from "~/utils.js";
 
 export type Version = {
 	version: number;
@@ -30,10 +28,10 @@ export const Version: Peer.MessageType<Version> = {
 		offset = buffer.writeBigUInt64LE(data.services, offset);
 		offset = buffer.writeBigUInt64LE(data.timestamp, offset);
 		offset = buffer.writeBigUInt64LE(data.recvServices, offset);
-		offset = writeBuffer(buffer, zeroPad16, offset);
+		offset += 16; // skip
 		offset = buffer.writeUInt16BE(data.recvPort, offset);
 		offset = buffer.writeBigUInt64LE(data.transServices, offset);
-		offset = writeBuffer(buffer, zeroPad16, offset);
+		offset += 16; // skip
 		offset = buffer.writeUInt16BE(data.transPort, offset);
 		offset = buffer.writeBigUInt64LE(data.nonce, offset);
 
