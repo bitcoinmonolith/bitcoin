@@ -3,7 +3,7 @@ import { CommandBuffer } from "~/CommandBuffer.js";
 import { checksum } from "~/utils.js";
 
 export namespace Peer {
-	export type Message = {
+	export type MessagePayload = {
 		command: string;
 		payload: Buffer;
 	};
@@ -30,7 +30,7 @@ export class Peer {
 	private readonly magic: Buffer;
 
 	private readonly socket: Socket;
-	private readonly messageBuffer = new CommandBuffer<Peer.Message>();
+	private readonly messageBuffer = new CommandBuffer<Peer.MessagePayload>();
 
 	constructor(host: string, port: number, magic: Buffer) {
 		this.host = host;
