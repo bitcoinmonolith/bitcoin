@@ -1,18 +1,6 @@
 import { Socket } from "net";
-import { CommandBuffer } from "./CommandBuffer.js";
-import crypto from "crypto";
-
-function sha256(buffer: Buffer): Buffer {
-	return crypto.createHash("sha256").update(buffer).digest();
-}
-
-function doubleSha256(buffer: Buffer): Buffer {
-	return sha256(sha256(buffer));
-}
-
-function checksum(payload: Buffer): Buffer {
-	return doubleSha256(payload).slice(0, 4);
-}
+import { CommandBuffer } from "~/CommandBuffer.js";
+import { checksum } from "~/utils.js";
 
 export namespace Peer {
 	export type Message = {
@@ -87,13 +75,13 @@ export class Peer {
 				if (inbox.length < totalLength) break;
 
 				const command = inbox.toString("ascii", 4, 16).replace(/\0+$/, "");
-				const payload = inbox.slice(24, totalLength);
+				const payload = inbox.subarray(24, totalLength);
 
 				// this.log(`📨 Received: ${command} (${payload.length} bytes)`);
 
 				this.messageBuffer.push({ command, payload });
 
-				inbox = inbox.slice(totalLength);
+				inbox = inbox.subarray(totalLength);
 			}
 		});
 	}

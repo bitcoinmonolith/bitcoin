@@ -1,9 +1,10 @@
 import dns from "dns/promises";
-import { BasicBlockParser } from "./BasicBlockParser.js";
-import { BasicBlockValidator } from "./BasicBlockValidator.js";
-import { MemoryBlockStore } from "./MemoryBlockStore.js";
-import { MemoryChain } from "./MemoryChain.js";
-import { Peer } from "./Peers.js";
+import { BasicBlockParser } from "~/BasicBlockParser.js";
+import { BasicBlockValidator } from "~/BasicBlockValidator.js";
+import { MemoryBlockStore } from "~/MemoryBlockStore.js";
+import { MemoryChain } from "~/MemoryChain.js";
+import { Peer } from "~/Peers.js";
+import { Verack, Version } from "./messages/Version.js";
 
 type MessageHandler<T> = {
 	type: Peer.MessageType<T>;
@@ -137,151 +138,6 @@ async function start() {
 		}
 	}
 }
-
-export namespace Serializer {
-	export function u32(n: number): Buffer {
-		const b = Buffer.alloc(4);
-		b.writeUInt32LE(n, 0);
-		return b;
-	}
-
-	export function i64(n: bigint): Buffer {
-		const b = Buffer.alloc(8);
-		b.writeBigInt64LE(n, 0);
-		return b;
-	}
-
-	export function u64(n: bigint): Buffer {
-		const b = Buffer.alloc(8);
-		b.writeBigUInt64LE(n, 0);
-		return b;
-	}
-
-	export function u8(n: number): Buffer {
-		const b = Buffer.alloc(1);
-		b.writeUInt8(n, 0);
-		return b;
-	}
-}
-
-type Version = {
-	version: number;
-	services: bigint;
-	timestamp: bigint;
-	recvServices: bigint;
-	recvPort: number;
-	transServices: bigint;
-	transPort: number;
-	nonce: bigint;
-	userAgent: string;
-	startHeight: number;
-	relay: boolean;
-};
-
-const Version: Peer.MessageType<Version> = {
-	command: "version",
-	serialize(data) {
-		const userAgentBytes = Buffer.from(data.userAgent, "utf8");
-		const userAgentLength = Buffer.from([userAgentBytes.length]);
-
-		const buffer = Buffer.alloc(150);
-		let offset = 0;
-
-		buffer.writeInt32LE(data.version, offset);
-		offset += 4;
-		buffer.writeBigUInt64LE(data.services, offset);
-		offset += 8;
-		buffer.writeBigUInt64LE(data.timestamp, offset);
-		offset += 8;
-		buffer.writeBigUInt64LE(data.recvServices, offset);
-		offset += 8;
-		Buffer.alloc(16).copy(buffer, offset);
-		offset += 16;
-		buffer.writeUInt16BE(data.recvPort, offset);
-		offset += 2;
-		buffer.writeBigUInt64LE(data.transServices, offset);
-		offset += 8;
-		Buffer.alloc(16).copy(buffer, offset);
-		offset += 16;
-		buffer.writeUInt16BE(data.transPort, offset);
-		offset += 2;
-		buffer.writeBigUInt64LE(data.nonce, offset);
-		offset += 8;
-
-		userAgentLength.copy(buffer, offset);
-		offset += userAgentLength.length;
-		userAgentBytes.copy(buffer, offset);
-		offset += userAgentBytes.length;
-
-		buffer.writeInt32LE(data.startHeight, offset);
-		offset += 4;
-		buffer.writeUInt8(data.relay ? 1 : 0, offset);
-		offset += 1;
-
-		return buffer.slice(0, offset);
-	},
-	deserialize(buffer: Buffer) {
-		let offset = 0;
-
-		const version = buffer.readInt32LE(offset);
-		offset += 4;
-		const services = buffer.readBigUInt64LE(offset);
-		offset += 8;
-		const timestamp = buffer.readBigUInt64LE(offset);
-		offset += 8;
-		const recvServices = buffer.readBigUInt64LE(offset);
-		offset += 8;
-
-		const recvIP = buffer.slice(offset, offset + 16);
-		offset += 16;
-		const recvPort = buffer.readUInt16BE(offset);
-		offset += 2;
-
-		const transServices = buffer.readBigUInt64LE(offset);
-		offset += 8;
-		const transIP = buffer.slice(offset, offset + 16);
-		offset += 16;
-		const transPort = buffer.readUInt16BE(offset);
-		offset += 2;
-
-		const nonce = buffer.readBigUInt64LE(offset);
-		offset += 8;
-
-		const userAgentLength = buffer[offset]!;
-		offset += 1;
-		const userAgentStr = buffer.slice(offset, offset + userAgentLength).toString("utf8");
-		offset += userAgentLength;
-
-		const startHeight = buffer.readInt32LE(offset);
-		offset += 4;
-
-		const relay = !!buffer.readUInt8(offset);
-		offset += 1;
-
-		return {
-			version,
-			services,
-			timestamp,
-			recvServices,
-			recvIP,
-			recvPort,
-			transServices,
-			transIP,
-			transPort,
-			nonce,
-			userAgent: userAgentStr,
-			startHeight,
-			relay,
-		};
-	},
-};
-
-type Verack = {};
-const Verack: Peer.MessageType<Verack> = {
-	command: "verack",
-	serialize: () => Buffer.alloc(0),
-	deserialize: () => ({}),
-};
 
 async function sendVersion(peer: Peer) {
 	const versionMsg: Version = {

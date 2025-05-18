@@ -1,4 +1,4 @@
-import { Block, BlockHeader, BlockValidator } from "./Blocks.js";
+import { Block, BlockHeader, BlockValidator } from "~/Blocks.js";
 import { createHash } from "crypto";
 
 // Decode Bitcoin compact target ("bits") into bigint

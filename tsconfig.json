@@ -1,10 +1,14 @@
 {
-    "compilerOptions": {
+	"compilerOptions": {
 		"module": "NodeNext",
 		"moduleResolution": "nodenext",
 		"target": "ESNext",
 		"lib": ["ESNext"],
 		"strict": true,
-		"noUncheckedIndexedAccess": true
-	}
+		"noUncheckedIndexedAccess": true,
+		"paths": {
+			"~/*": ["./src/*"]
+		}
+	},
+	"include": ["src"]
 }
