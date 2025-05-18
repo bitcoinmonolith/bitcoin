@@ -12,7 +12,6 @@ export type BlockHeader = {
 };
 export namespace BlockHeader {
 	export type Init = {
-		readonly hash: string;
 		readonly version: number;
 		readonly prevHash: string;
 		readonly merkleRoot: string;
@@ -33,6 +32,7 @@ export namespace BlockHeader {
 
 		return {
 			...init,
+			hash: doubleSha256(buffer).reverse().toString("hex"),
 			raw: buffer,
 		};
 	}
