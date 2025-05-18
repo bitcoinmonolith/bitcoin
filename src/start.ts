@@ -54,14 +54,15 @@ const chain = new MemoryChain();
 
 const peers = new Set<Peer>();
 
-async function resolveTestnetPeer(): Promise<string> {
+async function* resolveTestnetPeers() {
 	for (const seed of TESTNET_DNS_SEEDS) {
 		try {
-			const addrs = await dns.resolve(seed);
-			if (addrs[0]) return addrs[0];
+			const peerAddresses = await dns.resolve(seed);
+			for (const peerAddress of peerAddresses) {
+				yield peerAddress;
+			}
 		} catch {}
 	}
-	throw new Error("No testnet peers found");
 }
 
 async function start() {
@@ -69,12 +70,16 @@ async function start() {
 	const handlersMap = new Map(handlers.map((handler) => [handler.type.command, handler] as const));
 	const handlersQueueByPeer = new WeakMap<Peer, { busy: boolean; calls: { (): Promise<void> }[] }>();
 
-	const host = await resolveTestnetPeer();
-	const peer = new Peer(host, 18333, TESTNET_MAGIC);
-	peers.add(peer);
-	peer.connect().then(async () => {
-		await sendVersion(peer);
-	});
+	// This need better logic later in the tick to discover peers and stuff
+	let peerCount = 0;
+	for await (const host of resolveTestnetPeers()) {
+		if (++peerCount > 1) break;
+		const peer = new Peer(host, 18333, TESTNET_MAGIC);
+		peers.add(peer);
+		peer.connect().then(async () => {
+			await sendVersion(peer);
+		});
+	}
 
 	while (true) {
 		try {
@@ -117,7 +122,7 @@ async function start() {
 					continue;
 				}
 
-				peer.logWarn(`⚠️ Unexpected: ${message.command}`);
+				peer.logWarn(`🛑 Unexpected: ${message.command}`);
 			}
 
 			if (!commandQueue.busy) {
