@@ -13,10 +13,6 @@ import dns from "dns/promises";
 import { SendHeaders } from "./messages/SendHeaders.js";
 import { Verack } from "./messages/Verack.js";
 
-const validator = new BasicBlockValidator();
-const store = new MemoryBlockStore();
-const chain = new MemoryChain();
-
 const TESTNET_MAGIC = Buffer.from("0b110907", "hex");
 const TESTNET_DNS_SEEDS = [
 	"testnet-seed.bitcoin.jonasschnelli.ch",
@@ -26,12 +22,10 @@ const TESTNET_DNS_SEEDS = [
 ];
 
 const bitcoin = new Bitcoin({
-	seeds: TESTNET_DNS_SEEDS,
-	magic: TESTNET_MAGIC,
 	handlers: [VersionHandler, PingHandler, SendCmpctHandler, GetHeadersHandler],
-	chain,
-	store,
-	validator,
+	chain: new MemoryChain(),
+	store: new MemoryBlockStore(),
+	validator: new BasicBlockValidator(),
 	async onStart(ctx) {
 		async function* resolveTestnetPeers(seeds: readonly string[]) {
 			for (const seed of seeds) {
@@ -45,9 +39,9 @@ const bitcoin = new Bitcoin({
 		}
 
 		let peerCount = 0;
-		for await (const host of resolveTestnetPeers(this.seeds)) {
+		for await (const host of resolveTestnetPeers(TESTNET_DNS_SEEDS)) {
 			if (++peerCount > 16) break;
-			const peer = new Peer(host, 18333, this.magic);
+			const peer = new Peer(host, 18333, TESTNET_MAGIC);
 
 			peer.connect().then(async () => {
 				ctx.peers.add(peer);
@@ -68,7 +62,7 @@ export async function ping(ctx: Bitcoin, peer: Peer) {
 }
 
 export async function handshake(ctx: Bitcoin, peer: Peer) {
-	const versionMsg: Version = {
+	const versionData: Version = {
 		version: 70015,
 		services: 1n,
 		timestamp: BigInt(Math.floor(Date.now() / 1000)),
@@ -82,7 +76,7 @@ export async function handshake(ctx: Bitcoin, peer: Peer) {
 		relay: true,
 	};
 
-	await peer.send(Version, versionMsg);
+	await peer.send(Version, versionData);
 	peer.log(`📗 Sent version`);
 	await ctx.expect(peer, Verack, () => true);
 	peer.log(`✅ Handshake complete`);

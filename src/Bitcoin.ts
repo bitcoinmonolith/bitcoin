@@ -28,8 +28,6 @@ export class Bitcoin {
 	private readonly expectorsByTypeByPeer: WeakMap<Peer, Map<string, Set<MessageExpector<any>>>>;
 
 	public readonly peers = new Set<Peer>();
-	public readonly seeds: readonly string[];
-	public readonly magic: Buffer;
 	public readonly validator: BlockValidator;
 	public readonly store: BlockStore;
 	public readonly chain: Chain;
@@ -38,18 +36,14 @@ export class Bitcoin {
 	private readonly onTick: (ctx: Bitcoin) => Promise<void>;
 
 	constructor(params: {
-		seeds: readonly string[];
 		handlers: readonly Message<unknown>[];
-		magic: Buffer;
 		validator: BasicBlockValidator;
 		store: MemoryBlockStore;
 		chain: MemoryChain;
 		onStart(ctx: Bitcoin): Promise<void>;
 		onTick(ctx: Bitcoin): Promise<void>;
 	}) {
-		this.seeds = params.seeds;
 		this.handlers = params.handlers;
-		this.magic = params.magic;
 		this.validator = params.validator;
 		this.store = params.store;
 		this.chain = params.chain;
