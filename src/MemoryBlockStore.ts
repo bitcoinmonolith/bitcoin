@@ -4,7 +4,7 @@ export class MemoryBlockStore extends BlockStore {
 	private store = new Map<string, Block>();
 
 	save(block: Block): void {
-		this.store.set(block.hash, block);
+		this.store.set(block.header.hash, block);
 	}
 
 	get(hash: string): Block | undefined {
