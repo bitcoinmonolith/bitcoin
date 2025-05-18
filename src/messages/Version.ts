@@ -1,5 +1,7 @@
+import { Message, Bitcoin } from "~/Bitcoin.js";
 import { Peer } from "~/Peers.js";
 import { writeBuffer, zeroPad16 } from "~/utils.js";
+import { Verack } from "./Verack.js";
 
 export type Version = {
 	version: number;
@@ -96,5 +98,13 @@ export const Version: Peer.MessageType<Version> = {
 			startHeight,
 			relay,
 		};
+	},
+};
+
+export const VersionHandler: Message<Version> = {
+	type: Version,
+	async handler({ peer, data }) {
+		peer.log(`🤝 Received version: v${data.version}, ua=${data.userAgent}`);
+		await peer.send(Verack, {});
 	},
 };

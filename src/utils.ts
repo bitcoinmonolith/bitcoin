@@ -12,6 +12,7 @@ export function checksum(payload: Buffer): Buffer {
 	return doubleSha256(payload).subarray(0, 4);
 }
 
+// TODO: Remove this later, just jump the offset instead
 export const zeroPad16 = Buffer.alloc(16);
 
 export function writeBuffer(target: Buffer, source: Buffer, offset: number) {

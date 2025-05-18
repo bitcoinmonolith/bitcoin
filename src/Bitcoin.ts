@@ -1,7 +1,5 @@
-import dns from "dns/promises";
-import { BasicBlockParser } from "./BasicBlockParser.js";
 import { BasicBlockValidator } from "./BasicBlockValidator.js";
-import { BlockParser, BlockStore, BlockValidator, Chain } from "./Blocks.js";
+import { BlockStore, BlockValidator, Chain } from "./Blocks.js";
 import { MemoryBlockStore } from "./MemoryBlockStore.js";
 import { MemoryChain } from "./MemoryChain.js";
 import { Peer } from "./Peers.js";
@@ -9,12 +7,12 @@ import { Peer } from "./Peers.js";
 export type Message<T> = {
 	type: Peer.MessageType<T>;
 	handler(event: MessageEvent<T>): Promise<void>;
-	send(peer: Peer, ctx: Bitcoin): Promise<void>;
 };
 
 export type MessageEvent<T> = {
 	peer: Peer;
 	data: T;
+	ctx: Bitcoin;
 };
 
 export type MessageExpector<T> = {
@@ -32,27 +30,32 @@ export class Bitcoin {
 	public readonly peers = new Set<Peer>();
 	public readonly seeds: readonly string[];
 	public readonly magic: Buffer;
-	public readonly parser: BlockParser;
 	public readonly validator: BlockValidator;
 	public readonly store: BlockStore;
 	public readonly chain: Chain;
+
+	private readonly onStart: (ctx: Bitcoin) => Promise<void>;
+	private readonly onTick: (ctx: Bitcoin) => Promise<void>;
 
 	constructor(params: {
 		seeds: readonly string[];
 		handlers: readonly Message<unknown>[];
 		magic: Buffer;
-		parser: BasicBlockParser;
 		validator: BasicBlockValidator;
 		store: MemoryBlockStore;
 		chain: MemoryChain;
+		onStart(ctx: Bitcoin): Promise<void>;
+		onTick(ctx: Bitcoin): Promise<void>;
 	}) {
 		this.seeds = params.seeds;
 		this.handlers = params.handlers;
 		this.magic = params.magic;
-		this.parser = params.parser;
 		this.validator = params.validator;
 		this.store = params.store;
 		this.chain = params.chain;
+
+		this.onStart = params.onStart;
+		this.onTick = params.onTick;
 
 		this.peers = new Set<Peer>();
 		this.handlersMap = new Map(this.handlers.map((handler) => [handler.type.command, handler] as const));
@@ -61,45 +64,27 @@ export class Bitcoin {
 	}
 
 	public async start() {
-		const sendVersion = this.handlersMap.get("version");
-		if (!sendVersion) {
-			throw new Error(`Missing handler for 'version' command. Make sure it is registered.`);
-		}
-
-		async function* resolveTestnetPeers(seeds: readonly string[]) {
-			for (const seed of seeds) {
-				try {
-					const peerAddresses = await dns.resolve(seed);
-					for (const peerAddress of peerAddresses) {
-						yield peerAddress;
-					}
-				} catch {}
-			}
-		}
-
-		let peerCount = 0;
-		for await (const host of resolveTestnetPeers(this.seeds)) {
-			if (++peerCount > 1) break;
-			const peer = new Peer(host, 18333, this.magic);
-			this.peers.add(peer);
-			peer.connect().then(async () => {
-				await sendVersion.send(peer, this);
-			});
-		}
+		await this.onStart(this);
 
 		while (true) {
 			try {
+				await this.onTick(this);
 				await this.tick();
 			} catch (error) {
 				console.error("UNEXPECTED ERROR:", error);
 			} finally {
-				await new Promise((resolve) => setTimeout(resolve, 1000));
+				await new Promise((resolve) => setTimeout(resolve, 0));
 			}
 		}
 	}
 
 	private async tick() {
 		for (const peer of this.peers) {
+			if (!peer.connected) {
+				this.peers.delete(peer);
+				continue;
+			}
+
 			const expectorsByType = this.expectorsByTypeByPeer.get(peer);
 
 			let commandQueue = this.handlersQueueByPeer.get(peer);
@@ -125,7 +110,7 @@ export class Bitcoin {
 					const data = handler.type.deserialize(message.payload);
 					commandQueue.calls.push(() => {
 						peer.log(`📥 Handling ${message.command}`);
-						return handler.handler({ peer, data });
+						return handler.handler({ peer, data, ctx: this });
 					});
 					continue;
 				}

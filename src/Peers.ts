@@ -1,6 +1,7 @@
 import { Socket } from "net";
 import { CommandBuffer } from "~/CommandBuffer.js";
 import { checksum } from "~/utils.js";
+import { DataType } from "./DataType.js";
 
 export namespace Peer {
 	export type MessagePayload = {
@@ -8,11 +9,7 @@ export namespace Peer {
 		payload: Buffer;
 	};
 
-	export type MessageType<T> = {
-		command: string;
-		serialize(data: T): Buffer;
-		deserialize(buffer: Buffer): T;
-	};
+	export type MessageType<T> = { command: string } & DataType<T>;
 
 	export type Error = {
 		message: string;

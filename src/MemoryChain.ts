@@ -25,8 +25,8 @@ export class MemoryChain extends Chain {
 			chainWork,
 		};
 
-		this.blocks.set(block.hash, block);
-		this.entries.set(block.hash, entry);
+		this.blocks.set(block.header.hash, block);
+		this.entries.set(block.header.hash, entry);
 
 		// If it's the new best chain, update tip and prune
 		if (!this.tip || entry.chainWork > this.tip.chainWork) {
@@ -48,6 +48,29 @@ export class MemoryChain extends Chain {
 		return this.tip ? this.tip.height : -1;
 	}
 
+	has(hash: Buffer | string): boolean {
+		const key = typeof hash === "string" ? hash : hash.toString("hex");
+		return this.entries.has(key);
+	}
+
+	nextBlockHeader(hash: Buffer | string): { hash: string; raw: Buffer } | null {
+		const key = typeof hash === "string" ? hash : hash.toString("hex");
+		const current = this.entries.get(key);
+		if (!current) return null;
+
+		// Find a block that directly references this one as prevHash
+		for (const entry of this.entries.values()) {
+			if (entry.block.header.prevHash === key) {
+				return {
+					hash: entry.block.header.hash,
+					raw: entry.block.header.raw,
+				};
+			}
+		}
+
+		return null;
+	}
+
 	private pruneStaleBlocks(): void {
 		if (!this.tip) return;
 
@@ -56,7 +79,7 @@ export class MemoryChain extends Chain {
 
 		// Walk back N blocks from the tip to collect main chain
 		for (let i = 0; i <= FINALITY_DEPTH && current; i++) {
-			mainChain.add(current.hash);
+			mainChain.add(current.header.hash);
 			current = this.blocks.get(current.header.prevHash);
 		}
 
