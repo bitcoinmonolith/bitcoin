@@ -9,6 +9,7 @@ import { Verack } from "./messages/Verack.js";
 import { SendCmpct } from "./messages/SendCmpct.js";
 import { GetHeaders } from "./messages/GetHeaders.js";
 import { Headers } from "./messages/Headers.js";
+import { Inv } from "./messages/Inv.js";
 
 export const SendHeadersHandler: Message<SendHeaders> = {
 	type: SendHeaders,
@@ -101,5 +102,16 @@ export const GetHeadersHandler: Message<GetHeaders> = {
 
 		peer.log(`📦 Sending ${headers.length} headers`);
 		await peer.send(Headers, { headers });
+	},
+};
+
+export const InvHandler: Message<Inv> = {
+	type: Inv,
+	async handler({ peer, data }) {
+		for (const item of data.inventory) {
+			const typeName = item.type === 1 ? "tx" : item.type === 2 ? "block" : `type-${item.type}`;
+			const hash = item.hash.toString("hex");
+			peer.log(`📩 Inv: ${typeName} ${hash}`);
+		}
 	},
 };

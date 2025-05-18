@@ -5,7 +5,15 @@ import { MemoryChain } from "~/MemoryChain.js";
 import { Bitcoin } from "./Bitcoin.js";
 import { Peer } from "./Peers.js";
 import { SendHeaders } from "./messages/SendHeaders.js";
-import { GetHeadersHandler, handshake, ping, PingHandler, SendCmpctHandler, VersionHandler } from "./protocols.js";
+import {
+	GetHeadersHandler,
+	handshake,
+	InvHandler,
+	ping,
+	PingHandler,
+	SendCmpctHandler,
+	VersionHandler,
+} from "./protocols.js";
 
 const TESTNET_MAGIC = Buffer.from("0b110907", "hex");
 const TESTNET_DNS_SEEDS = [
@@ -16,7 +24,7 @@ const TESTNET_DNS_SEEDS = [
 ];
 
 const bitcoin = new Bitcoin({
-	handlers: [VersionHandler, PingHandler, SendCmpctHandler, GetHeadersHandler],
+	handlers: [VersionHandler, PingHandler, SendCmpctHandler, GetHeadersHandler, InvHandler],
 	chain: new MemoryChain(),
 	store: new MemoryBlockStore(),
 	validator: new BasicBlockValidator(),
@@ -34,7 +42,7 @@ const bitcoin = new Bitcoin({
 
 		let peerCount = 0;
 		for await (const host of resolveTestnetPeers(TESTNET_DNS_SEEDS)) {
-			if (++peerCount > 16) break;
+			if (++peerCount > 1) break;
 			const peer = new Peer(host, 18333, TESTNET_MAGIC);
 
 			peer.connect().then(async () => {
