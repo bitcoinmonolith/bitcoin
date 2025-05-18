@@ -1,5 +1,18 @@
 import { Socket } from "net";
 import { CommandBuffer } from "./CommandBuffer.js";
+import crypto from "crypto";
+
+function sha256(buffer: Buffer): Buffer {
+	return crypto.createHash("sha256").update(buffer).digest();
+}
+
+function doubleSha256(buffer: Buffer): Buffer {
+	return sha256(sha256(buffer));
+}
+
+function checksum(payload: Buffer): Buffer {
+	return doubleSha256(payload).slice(0, 4);
+}
 
 export namespace Peer {
 	export type Message = {
@@ -26,20 +39,22 @@ export class Peer {
 
 	public readonly host: string;
 	public readonly port: number;
+	private readonly magic: Buffer;
 
 	private readonly socket: Socket;
 	private readonly messageBuffer = new CommandBuffer<Peer.Message>();
 
-	constructor(host: string, port: number) {
+	constructor(host: string, port: number, magic: Buffer) {
 		this.host = host;
 		this.port = port;
+		this.magic = magic;
 		this.socket = new Socket();
 	}
 
 	async connect(): Promise<void> {
 		if (this.#connected) return;
 
-		console.log(`🌐 Connecting to peer ${this.host}:${this.port}...`);
+		this.log(`🌐 Connecting to peer...`);
 
 		await new Promise<void>((resolve, reject) => {
 			const onError = (err: Error) => reject(err);
@@ -51,22 +66,35 @@ export class Peer {
 		});
 
 		this.#connected = true;
-		console.log(`✅ Connected to ${this.host}:${this.port}`);
+		this.log(`✅ Connected to peer`);
 
 		this.socket.on("error", (err) => {
-			console.error(`❌ Socket error from ${this.host}:${this.port} → ${err.message}`);
+			this.logError(`❌ Socket error: ${err.message}`);
 		});
 
 		this.socket.on("close", () => {
 			this.#connected = false;
-			console.log(`👋 Disconnected from ${this.host}:${this.port}`);
+			this.log(`👋 Disconnected from peer`);
 		});
 
-		this.socket.on("data", (buffer: Buffer) => {
-			const command = buffer.subarray(0, 12).toString("ascii").replace(/\0| /g, "");
-			const payload = buffer.subarray(12);
-			console.log(`📨 Received: ${command} (${payload.length} bytes)`);
-			this.messageBuffer.push({ command, payload });
+		let inbox = Buffer.alloc(0);
+		this.socket.on("data", (data: Buffer) => {
+			inbox = Buffer.concat([inbox, data]);
+
+			while (inbox.length >= 24) {
+				const length = inbox.readUInt32LE(16);
+				const totalLength = 24 + length;
+				if (inbox.length < totalLength) break;
+
+				const command = inbox.toString("ascii", 4, 16).replace(/\0+$/, "");
+				const payload = inbox.slice(24, totalLength);
+
+				// this.log(`📨 Received: ${command} (${payload.length} bytes)`);
+
+				this.messageBuffer.push({ command, payload });
+
+				inbox = inbox.slice(totalLength);
+			}
 		});
 	}
 
@@ -74,7 +102,7 @@ export class Peer {
 		if (!this.#connected) return;
 		this.#connected = false;
 
-		console.log(`🔌 Disconnecting from ${this.host}:${this.port}...`);
+		this.log(`🔌 Disconnecting from peer...`);
 
 		await new Promise<void>((resolve) => {
 			this.socket.end(resolve);
@@ -84,14 +112,18 @@ export class Peer {
 	async send<T>(type: Peer.MessageType<T>, data: T): Promise<void> {
 		if (!this.connected) throw new Error("Peer is not connected");
 
-		const cmdBuf = Buffer.alloc(12, " ");
-		cmdBuf.write(type.command, "ascii");
-		const full = Buffer.concat([cmdBuf, type.serialize(data)]);
+		const payload = type.serialize(data);
+		const buffer = Buffer.alloc(24 + payload.length);
+		this.magic.copy(buffer, 0);
+		buffer.write(type.command, 4, "ascii");
+		buffer.writeUInt32LE(payload.length, 16);
+		checksum(payload).copy(buffer, 20);
+		payload.copy(buffer, 24);
 
-		console.log(`📤 Sending: ${type.command} (${full.length - 12} bytes)`);
+		this.log(`📤 Sending: ${type.command} (${payload.length} bytes)`);
 
 		return new Promise((resolve, reject) => {
-			this.socket.write(full, (err) => {
+			this.socket.write(buffer, (err) => {
 				if (err) reject(err);
 				else resolve();
 			});
@@ -100,5 +132,15 @@ export class Peer {
 
 	consumeMessages() {
 		return this.messageBuffer.consume();
+	}
+
+	log(...params: unknown[]) {
+		console.log(`${this.host}:${this.port}`, "→", ...params);
+	}
+	logError(...params: unknown[]) {
+		console.error(`${this.host}:${this.port}`, "→", ...params);
+	}
+	logWarn(...params: unknown[]) {
+		console.warn(`${this.host}:${this.port}`, "→", ...params);
 	}
 }
