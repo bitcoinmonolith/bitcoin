@@ -15,6 +15,7 @@ import {
 	VersionHandler,
 } from "./protocols.js";
 
+const MAINNET_MAGIC = Buffer.from("f9beb4d9", "hex");
 const TESTNET_MAGIC = Buffer.from("0b110907", "hex");
 const TESTNET_DNS_SEEDS = [
 	"testnet-seed.bitcoin.jonasschnelli.ch",
@@ -42,7 +43,7 @@ const bitcoin = new Bitcoin({
 
 		let peerCount = 0;
 		for await (const host of resolveTestnetPeers(TESTNET_DNS_SEEDS)) {
-			if (++peerCount > 1) break;
+			if (++peerCount > 8) break;
 			const peer = new Peer(host, 18333, TESTNET_MAGIC);
 
 			peer.connect().then(async () => {
@@ -52,6 +53,15 @@ const bitcoin = new Bitcoin({
 				await peer.send(SendHeaders, {});
 			});
 		}
+
+		/* const peer = new Peer("192.168.1.10", 8333, MAINNET_MAGIC);
+
+		peer.connect().then(async () => {
+			ctx.peers.add(peer);
+			await handshake(ctx, peer);
+			await ping(ctx, peer);
+			await peer.send(SendHeaders, {});
+		}); */
 	},
 	async onTick(ctx) {},
 });
