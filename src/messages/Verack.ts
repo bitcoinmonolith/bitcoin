@@ -1,8 +1,8 @@
-import { Peer } from "~/Peers.js";
+import { Peer } from "~/Peers.ts";
 
 export type Verack = {};
 export const Verack: Peer.MessageType<Verack> = {
 	command: "verack",
-	serialize: () => Buffer.alloc(0),
+	serialize: () => new Uint8Array(0),
 	deserialize: () => ({}),
 };

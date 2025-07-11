@@ -1,10 +1,9 @@
-import dns from "dns/promises";
-import { BasicBlockValidator } from "~/BasicBlockValidator.js";
-import { MemoryBlockStore } from "~/MemoryBlockStore.js";
-import { MemoryChain } from "~/MemoryChain.js";
-import { Bitcoin } from "./Bitcoin.js";
-import { Peer } from "./Peers.js";
-import { SendHeaders } from "./messages/SendHeaders.js";
+import { BasicBlockValidator } from "~/BasicBlockValidator.ts";
+import { MemoryBlockStore } from "~/MemoryBlockStore.ts";
+import { MemoryChain } from "~/MemoryChain.ts";
+import { Bitcoin } from "./Bitcoin.ts";
+import { Peer } from "./Peers.ts";
+import { SendHeaders } from "./messages/SendHeaders.ts";
 import {
 	GetHeadersHandler,
 	handshake,
@@ -13,10 +12,11 @@ import {
 	PingHandler,
 	SendCmpctHandler,
 	VersionHandler,
-} from "./protocols.js";
+} from "./protocols.ts";
+import { hexToBytes } from "./utils.ts";
 
-const MAINNET_MAGIC = Buffer.from("f9beb4d9", "hex");
-const TESTNET_MAGIC = Buffer.from("0b110907", "hex");
+const MAINNET_MAGIC = hexToBytes("f9beb4d9");
+const TESTNET_MAGIC = hexToBytes("0b110907");
 const TESTNET_DNS_SEEDS = [
 	"testnet-seed.bitcoin.jonasschnelli.ch",
 	"seed.tbtc.petertodd.org",
@@ -30,19 +30,21 @@ const bitcoin = new Bitcoin({
 	store: new MemoryBlockStore(),
 	validator: new BasicBlockValidator(),
 	async onStart(ctx) {
-		async function* resolveTestnetPeers(seeds: readonly string[]) {
+		async function* resolvePeers(seeds: readonly string[]) {
 			for (const seed of seeds) {
 				try {
-					const peerAddresses = await dns.resolve(seed);
+					const peerAddresses = await Deno.resolveDns(seed, "A");
 					for (const peerAddress of peerAddresses) {
 						yield peerAddress;
 					}
-				} catch {}
+				} catch (_) {
+					// Ignore failed DNS resolution
+				}
 			}
-		}
+		}		
 
 		let peerCount = 0;
-		for await (const host of resolveTestnetPeers(TESTNET_DNS_SEEDS)) {
+		for await (const host of resolvePeers(TESTNET_DNS_SEEDS)) {
 			if (++peerCount > 8) break;
 			const peer = new Peer(host, 18333, TESTNET_MAGIC);
 

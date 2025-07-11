@@ -1,19 +1,17 @@
-import { Message } from "~/Bitcoin.js";
-import { Peer } from "~/Peers.js";
-import { Pong } from "./Pong.js";
-import { randomBytes } from "crypto";
+import { Peer } from "~/Peers.ts";
+import { readUInt64LE, writeUInt64LE } from "../utils.ts";
 
 export type Ping = { nonce: bigint };
 export const Ping: Peer.MessageType<Ping> = {
 	command: "ping",
 	serialize(data) {
-		const b = Buffer.alloc(8);
-		b.writeBigUInt64LE(data.nonce);
-		return b;
+		const buffer = new Uint8Array(8);
+		writeUInt64LE(buffer, data.nonce, 0);
+		return buffer;
 	},
 	deserialize(buffer) {
 		return {
-			nonce: buffer.readBigUInt64LE(0),
+			nonce: readUInt64LE(buffer, 0),
 		};
 	},
 };

@@ -1,8 +1,8 @@
-import { BasicBlockValidator } from "./BasicBlockValidator.js";
-import { BlockStore, BlockValidator, Chain } from "./Blocks.js";
-import { MemoryBlockStore } from "./MemoryBlockStore.js";
-import { MemoryChain } from "./MemoryChain.js";
-import { Peer } from "./Peers.js";
+import { BasicBlockValidator } from "./BasicBlockValidator.ts";
+import { BlockStore, BlockValidator, Chain } from "./Blocks.ts";
+import { MemoryBlockStore } from "./MemoryBlockStore.ts";
+import { MemoryChain } from "./MemoryChain.ts";
+import { Peer } from "./Peers.ts";
 
 export type Message<T> = {
 	type: Peer.MessageType<T>;

@@ -1,16 +1,17 @@
-import { Peer } from "~/Peers.js";
+import { Peer } from "~/Peers.ts";
+import { readUInt64LE, writeUInt64LE } from "../utils.ts";
 
 export type Pong = { nonce: bigint };
 export const Pong: Peer.MessageType<Pong> = {
 	command: "pong",
 	serialize(data) {
-		const b = Buffer.alloc(8);
-		b.writeBigUInt64LE(data.nonce);
-		return b;
+		const buffer = new Uint8Array(8);
+		writeUInt64LE(buffer, data.nonce, 0);
+		return buffer;
 	},
 	deserialize(buffer) {
 		return {
-			nonce: buffer.readBigUInt64LE(0),
+			nonce: readUInt64LE(buffer, 0),
 		};
 	},
 };

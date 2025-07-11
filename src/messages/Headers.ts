@@ -1,22 +1,23 @@
-import { Peer } from "~/Peers.js";
+import { Peer } from "~/Peers.ts";
+import { concatBytes } from "../utils.ts";
 
 export type Headers = {
-	headers: Buffer[]; // each header is 80 bytes
+	headers: Uint8Array[]; // each header is 80 bytes
 };
 
 export const Headers: Peer.MessageType<Headers> = {
 	command: "headers",
 	serialize(data) {
 		const count = data.headers.length;
-		const buf = Buffer.concat([
-			Buffer.from([count]), // CompactSize works for small counts
-			...data.headers.map((h) => Buffer.concat([h, Buffer.from([0])])), // headers + txn count (always 0)
+		const buf = concatBytes([
+			new Uint8Array([count]), // CompactSize works for small counts
+			...data.headers.flatMap((header) => [header, new Uint8Array([0])]), // headers + txn count (always 0)
 		]);
 		return buf;
 	},
 	deserialize(buffer) {
 		const count = buffer[0]!;
-		const headers: Buffer[] = [];
+		const headers: Uint8Array[] = [];
 
 		let offset = 1;
 		for (let i = 0; i < count; i++) {

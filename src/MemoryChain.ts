@@ -1,4 +1,4 @@
-import { Block, BlockHeader, Chain } from "~/Blocks.js";
+import { Block, BlockHeader, Chain } from "~/Blocks.ts";
 
 type ChainEntry = {
 	block: Block;

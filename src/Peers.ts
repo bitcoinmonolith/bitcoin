@@ -1,12 +1,11 @@
-import { Socket } from "net";
-import { CommandBuffer } from "~/CommandBuffer.js";
-import { checksum } from "~/utils.js";
-import { DataType } from "./DataType.js";
+import { CommandBuffer } from "./CommandBuffer.ts";
+import { checksum, concatBytes, readUInt32LE, writeUInt32LE } from "./utils.ts";
+import { DataType } from "./DataType.ts";
 
-export namespace Peer {
+export declare namespace Peer {
 	export type MessagePayload = {
 		command: string;
-		payload: Buffer;
+		payload: Uint8Array;
 	};
 
 	export type MessageType<T> = { command: string } & DataType<T>;
@@ -24,16 +23,16 @@ export class Peer {
 
 	public readonly host: string;
 	public readonly port: number;
-	private readonly magic: Buffer;
+	private readonly magic: Uint8Array;
 
-	private readonly socket: Socket;
+	private connection: Deno.Conn | null = null;
 	private readonly messageBuffer = new CommandBuffer<Peer.MessagePayload>();
+	private readerRunning = false;
 
-	constructor(host: string, port: number, magic: Buffer) {
+	constructor(host: string, port: number, magic: Uint8Array) {
 		this.host = host;
 		this.port = port;
 		this.magic = magic;
-		this.socket = new Socket();
 	}
 
 	async connect(): Promise<void> {
@@ -41,78 +40,84 @@ export class Peer {
 
 		this.log(`🌐 Connecting to peer...`);
 
-		await new Promise<void>((resolve, reject) => {
-			const onError = (err: Error) => reject(err);
-			this.socket.once("error", onError);
-			this.socket.connect(this.port, this.host, () => {
-				this.socket.off("error", onError);
-				resolve();
-			});
+		// Establish TCP connection using Deno.connect
+		this.connection = await Deno.connect({
+			hostname: this.host,
+			port: this.port,
+			transport: "tcp",
 		});
 
 		this.#connected = true;
 		this.log(`✅ Connected to peer`);
 
-		this.socket.on("error", (err) => {
-			this.logError(`❌ Socket error: ${err.message}`);
-		});
-
-		this.socket.on("close", () => {
-			this.#connected = false;
-			this.log(`👋 Disconnected from peer`);
-		});
-
-		let inbox = Buffer.alloc(0);
-		this.socket.on("data", (data: Buffer) => {
-			inbox = Buffer.concat([inbox, data]);
-
-			while (inbox.length >= 24) {
-				const length = inbox.readUInt32LE(16);
-				const totalLength = 24 + length;
-				if (inbox.length < totalLength) break;
-
-				const command = inbox.toString("ascii", 4, 16).replace(/\0+$/, "");
-				const payload = inbox.subarray(24, totalLength);
-
-				// this.log(`📨 Received: ${command} (${payload.length} bytes)`);
-
-				this.messageBuffer.push({ command, payload });
-
-				inbox = inbox.subarray(totalLength);
-			}
-		});
+		// Start reading from connection
+		this.startReader();
 	}
 
-	async disconnect(): Promise<void> {
-		if (!this.#connected) return;
+	private async startReader() {
+		if (!this.connection || this.readerRunning) return;
+		this.readerRunning = true;
+
+		let inbox: Uint8Array = new Uint8Array(0);
+		const conn = this.connection;
+		try {
+			const buffer = new Uint8Array(4096);
+			while (this.#connected && conn.readable) {
+				const n = await conn.read(buffer);
+				if (n === null) break;
+				if (n === 0) continue;
+				inbox = concatBytes([inbox, buffer.subarray(0, n)]);
+
+				while (inbox.length >= 24) {
+					const length = readUInt32LE(inbox, 16);
+					const totalLength = 24 + length;
+					if (inbox.length < totalLength) break;
+
+					const command = new TextDecoder("ascii").decode(inbox.subarray(4, 16)).replace(/\0+$/, "");
+					const payload = inbox.subarray(24, totalLength);
+
+					// this.log(`📨 Received: ${command} (${payload.length} bytes)`);
+					this.messageBuffer.push({ command, payload });
+
+					inbox = inbox.subarray(totalLength);
+				}
+			}
+		} catch (err) {
+			this.logError(err)
+		} finally {
+			this.#connected = false;
+			this.log(`👋 Disconnected from peer`);
+			conn.close();
+		}
+	}
+
+	disconnect(): void {
+		if (!this.#connected || !this.connection) return;
 		this.#connected = false;
-
 		this.log(`🔌 Disconnecting from peer...`);
-
-		await new Promise<void>((resolve) => {
-			this.socket.end(resolve);
-		});
+		this.connection.close();
+		this.connection = null;
 	}
 
 	async send<T>(type: Peer.MessageType<T>, data: T): Promise<void> {
-		if (!this.connected) throw new Error("Peer is not connected");
+		if (!this.connected || !this.connection) throw new Error("Peer is not connected");
 
-		const payload = type.serialize(data);
-		const buffer = Buffer.alloc(24 + payload.length);
-		this.magic.copy(buffer, 0);
-		buffer.write(type.command, 4, "ascii");
-		buffer.writeUInt32LE(payload.length, 16);
-		checksum(payload).copy(buffer, 20);
-		payload.copy(buffer, 24);
+		const payload = type.serialize(data); // Uint8Array
+		const buffer = new Uint8Array(24 + payload.length);
+		buffer.set(this.magic, 0);
+		// Write command as ascii, pad with zeros
+		const encoder = new TextEncoder();
+		const commandEncoded = encoder.encode(type.command);
+		buffer.set(commandEncoded, 4);
+		// Zero fill up to 16 bytes
+		for (let i = 4 + commandEncoded.length; i < 16; ++i) buffer[i] = 0;
+		writeUInt32LE(buffer, payload.length, 16);
+		buffer.set(await checksum(payload), 20);
+		buffer.set(payload, 24);
 
 		this.log(`📤 Sending: ${type.command} (${payload.length} bytes)`);
 
-		return new Promise((resolve, reject) => {
-			this.socket.write(buffer, (err) => {
-				if (err) reject(err);
-				else resolve();
-			});
-		});
+		await this.connection.write(buffer);
 	}
 
 	consumeMessages() {

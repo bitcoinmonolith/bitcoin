@@ -1,0 +1,11 @@
+- [x] Convert Node code to Deno
+- [ ] Use ArrayBuffer instead of Uint8Array, use it for reading and writing only as wrapper.
+- [ ] Instead of hex string, use ArrayBuffer.
+- [ ] Make sure code is simple and makes sense.
+- [ ] Decode, parse and verify txs inside blocks.
+- [ ] Make the database/compression as you imagined (you know)
+- [ ] Put the blocks inside the database, utxo and shit. you know the shit.
+- [ ] Write a basic logic that downloads the whole blockchain from your own Bitcoin Knots node from the local network.
+- [ ] Verify blockchain is smaller than 100GB, if not do more tweaks and hacks to make it smaller.
+- [ ] Handle chain forks orphans and etc.
+- [ ] Make some basic webui to explore your blockchain. Also the foundation of the main webui.

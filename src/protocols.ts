@@ -1,15 +1,16 @@
-import { randomBytes } from "crypto";
-import { Bitcoin, Message } from "./Bitcoin.js";
-import { Ping } from "./messages/Ping.js";
-import { Pong } from "./messages/Pong.js";
-import { SendHeaders } from "./messages/SendHeaders.js";
-import { Peer } from "./Peers.js";
-import { Version } from "./messages/Version.js";
-import { Verack } from "./messages/Verack.js";
-import { SendCmpct } from "./messages/SendCmpct.js";
-import { GetHeaders } from "./messages/GetHeaders.js";
-import { Headers } from "./messages/Headers.js";
-import { Inv } from "./messages/Inv.js";
+import { Bitcoin, Message } from "./Bitcoin.ts";
+import { Ping } from "./messages/Ping.ts";
+import { Pong } from "./messages/Pong.ts";
+import { SendHeaders } from "./messages/SendHeaders.ts";
+import { Peer } from "./Peers.ts";
+import { Version } from "./messages/Version.ts";
+import { Verack } from "./messages/Verack.ts";
+import { SendCmpct } from "./messages/SendCmpct.ts";
+import { GetHeaders } from "./messages/GetHeaders.ts";
+import { Headers } from "./messages/Headers.ts";
+import { Inv } from "./messages/Inv.ts";
+import { randomBytes } from "@noble/hashes/utils";
+import { bytesToHex, readUInt64LE } from "./utils.ts";
 
 export const SendHeadersHandler: Message<SendHeaders> = {
 	type: SendHeaders,
@@ -26,7 +27,7 @@ export const PingHandler: Message<Ping> = {
 	},
 };
 export async function ping(ctx: Bitcoin, peer: Peer) {
-	const nonce = randomBytes(8).readBigUInt64LE(0);
+	const nonce = readUInt64LE(randomBytes(8), 0);
 	await peer.send(Ping, { nonce });
 	await ctx.expect(peer, Pong, (pong) => pong.nonce === nonce);
 	peer.log("🏓 Pong received");
@@ -78,7 +79,7 @@ export const GetHeadersHandler: Message<GetHeaders> = {
 
 		// 1. Find first known hash
 		for (const locator of data.hashes) {
-			const hex = locator.toString("hex");
+			const hex = bytesToHex(locator);
 			if (chain.has(hex)) {
 				known = hex;
 				break;
@@ -91,12 +92,12 @@ export const GetHeadersHandler: Message<GetHeaders> = {
 		}
 
 		// 2. Walk forward from the known block
-		const headers: Buffer[] = [];
+		const headers: Uint8Array[] = [];
 		let next = chain.nextBlockHeader(known);
 
 		while (next && headers.length < 2000) {
 			headers.push(next.raw);
-			if (next.hash === data.stopHash.toString("hex")) break;
+			if (next.hash === bytesToHex(data.stopHash)) break;
 			next = chain.nextBlockHeader(next.hash);
 		}
 
@@ -110,7 +111,7 @@ export const InvHandler: Message<Inv> = {
 	async handler({ peer, data }) {
 		for (const item of data.inventory) {
 			const typeName = item.type === 1 ? "tx" : item.type === 2 ? "block" : `type-${item.type}`;
-			const hash = item.hash.toString("hex");
+			const hash = bytesToHex(item.hash);
 			peer.log(`📩 Inv: ${typeName} ${hash}`);
 		}
 	},

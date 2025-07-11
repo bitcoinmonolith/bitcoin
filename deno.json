@@ -1,0 +1,21 @@
+{
+    "imports": {
+        "@noble/hashes": "jsr:@noble/hashes@^1.8.0",
+        "~/": "./src/"  
+    },
+    "compilerOptions": {
+        "types": ["deno.ns"],
+        "strict": true,
+		"noUncheckedIndexedAccess": true
+    },
+    "fmt": {
+        "lineWidth": 120,
+        "indentWidth": 4,
+        "useTabs": true
+    },
+    "lint": {
+        "rules": {
+            "exclude": ["no-namespace"]
+        }
+    }
+}

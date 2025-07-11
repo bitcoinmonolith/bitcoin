@@ -1,4 +1,4 @@
-import { Block, BlockStore } from "~/Blocks.js";
+import { Block, BlockStore } from "~/Blocks.ts";
 
 export class MemoryBlockStore extends BlockStore {
 	private store = new Map<string, Block>();

@@ -1,5 +1,5 @@
-import { Peer } from "~/Peers.js";
-import { writeBuffer } from "~/utils.js";
+import { Peer } from "~/Peers.ts";
+import { readInt32LE, readUInt16BE, readUInt64LE, readUInt8, writeBytes, writeInt32LE, writeUInt16BE, writeUInt64LE, writeUInt8 } from "~/utils.ts";
 
 export type Version = {
 	version: number;
@@ -18,67 +18,67 @@ export type Version = {
 export const Version: Peer.MessageType<Version> = {
 	command: "version",
 	serialize(data) {
-		const userAgentBytes = Buffer.from(data.userAgent, "utf8");
-		const userAgentLength = Buffer.from([userAgentBytes.length]);
+		const userAgentBytes = new TextEncoder().encode(data.userAgent);
+		const userAgentLength = new Uint8Array([userAgentBytes.length]);
 
-		const buffer = Buffer.alloc(150);
+		const buffer = new Uint8Array(150);
 		let offset = 0;
 
-		offset = buffer.writeInt32LE(data.version, offset);
-		offset = buffer.writeBigUInt64LE(data.services, offset);
-		offset = buffer.writeBigUInt64LE(data.timestamp, offset);
-		offset = buffer.writeBigUInt64LE(data.recvServices, offset);
+		offset = writeInt32LE(buffer, data.version, offset);
+		offset = writeUInt64LE(buffer, data.services, offset);
+		offset = writeUInt64LE(buffer, data.timestamp, offset);
+		offset = writeUInt64LE(buffer, data.recvServices, offset);
 		offset += 16; // skip
-		offset = buffer.writeUInt16BE(data.recvPort, offset);
-		offset = buffer.writeBigUInt64LE(data.transServices, offset);
+		offset = writeUInt16BE(buffer, data.recvPort, offset);
+		offset = writeUInt64LE(buffer, data.transServices, offset);
 		offset += 16; // skip
-		offset = buffer.writeUInt16BE(data.transPort, offset);
-		offset = buffer.writeBigUInt64LE(data.nonce, offset);
+		offset = writeUInt16BE(buffer, data.transPort, offset);
+		offset = writeUInt64LE(buffer, data.nonce, offset);
 
-		offset = writeBuffer(buffer, userAgentLength, offset);
-		offset = writeBuffer(buffer, userAgentBytes, offset);
+		offset = writeBytes(buffer, userAgentLength, offset);
+		offset = writeBytes(buffer, userAgentBytes, offset);
 
-		offset = buffer.writeInt32LE(data.startHeight, offset);
-		offset = buffer.writeUInt8(data.relay ? 1 : 0, offset);
+		offset = writeInt32LE(buffer, data.startHeight, offset);
+		offset = writeUInt8(buffer, data.relay ? 1 : 0, offset);
 
 		return buffer.subarray(0, offset);
 	},
-	deserialize(buffer: Buffer) {
+	deserialize(buffer: Uint8Array) {
 		let offset = 0;
 
-		const version = buffer.readInt32LE(offset);
+		const version = readInt32LE(buffer, offset);
 		offset += 4;
-		const services = buffer.readBigUInt64LE(offset);
+		const services = readUInt64LE(buffer, offset);
 		offset += 8;
-		const timestamp = buffer.readBigUInt64LE(offset);
+		const timestamp = readUInt64LE(buffer, offset);
 		offset += 8;
-		const recvServices = buffer.readBigUInt64LE(offset);
+		const recvServices = readUInt64LE(buffer, offset);
 		offset += 8;
 
 		const recvIP = buffer.subarray(offset, offset + 16);
 		offset += 16;
-		const recvPort = buffer.readUInt16BE(offset);
+		const recvPort = readUInt16BE(buffer, offset);
 		offset += 2;
 
-		const transServices = buffer.readBigUInt64LE(offset);
+		const transServices = readUInt64LE(buffer, offset);
 		offset += 8;
 		const transIP = buffer.subarray(offset, offset + 16);
 		offset += 16;
-		const transPort = buffer.readUInt16BE(offset);
+		const transPort = readUInt16BE(buffer, offset);
 		offset += 2;
 
-		const nonce = buffer.readBigUInt64LE(offset);
+		const nonce = readUInt64LE(buffer, offset);
 		offset += 8;
 
 		const userAgentLength = buffer[offset]!;
 		offset += 1;
-		const userAgentStr = buffer.subarray(offset, offset + userAgentLength).toString("utf8");
+		const userAgentStr = new TextDecoder().decode(buffer.subarray(offset, offset + userAgentLength));
 		offset += userAgentLength;
 
-		const startHeight = buffer.readInt32LE(offset);
+		const startHeight = readInt32LE(buffer, offset);
 		offset += 4;
 
-		const relay = !!buffer.readUInt8(offset);
+		const relay = !!readUInt8(buffer, offset);
 		offset += 1;
 
 		return {

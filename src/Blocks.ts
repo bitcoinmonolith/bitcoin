@@ -1,4 +1,5 @@
-import { doubleSha256, writeBuffer } from "./utils.js";
+import { sha256 } from "@noble/hashes/sha2";
+import { bytesToHex, concatBytes, hexToBytes, readUInt32LE, writeBytes, writeUInt32LE } from "./utils.ts";
 
 export type BlockHeader = {
 	readonly hash: string;
@@ -8,8 +9,9 @@ export type BlockHeader = {
 	readonly timestamp: number;
 	readonly bits: number;
 	readonly nonce: number;
-	readonly raw: Buffer;
+	readonly raw: Uint8Array;
 };
+
 export namespace BlockHeader {
 	export type Init = {
 		readonly version: number;
@@ -21,34 +23,34 @@ export namespace BlockHeader {
 	};
 
 	export function create(init: BlockHeader.Init): BlockHeader {
-		const buffer = Buffer.alloc(80);
+		const buffer = new Uint8Array(80);
 		let offset = 0;
-		offset = buffer.writeUInt32LE(init.version, offset);
-		offset = writeBuffer(buffer, Buffer.from(init.prevHash, "hex").reverse(), offset);
-		offset = writeBuffer(buffer, Buffer.from(init.merkleRoot, "hex").reverse(), offset);
-		offset = buffer.writeUInt32LE(init.timestamp, offset);
-		offset = buffer.writeUInt32LE(init.bits, offset);
-		offset = buffer.writeUInt32LE(init.nonce, offset);
+		offset = writeUInt32LE(buffer, init.version, offset);
+		offset = writeBytes(buffer, hexToBytes(init.prevHash).reverse(), offset);
+		offset = writeBytes(buffer, hexToBytes(init.merkleRoot).reverse(), offset);
+		offset = writeUInt32LE(buffer, init.timestamp, offset);
+		offset = writeUInt32LE(buffer, init.bits, offset);
+		offset = writeUInt32LE(buffer, init.nonce, offset);
 
 		return {
 			...init,
-			hash: doubleSha256(buffer).reverse().toString("hex"),
+			hash: bytesToHex(sha256(sha256(buffer)).reverse()),
 			raw: buffer,
 		};
 	}
 
-	export function fromBuffer(buffer: Buffer): BlockHeader {
+	export function fromBuffer(buffer: Uint8Array): BlockHeader {
 		if (buffer.length < 80) {
 			throw new Error("Invalid block header: must be at least 80 bytes");
 		}
 
-		const hash = doubleSha256(buffer).reverse().toString("hex");
-		const version = buffer.readUInt32LE(0);
-		const prevHash = Buffer.from(buffer.subarray(4, 36)).reverse().toString("hex");
-		const merkleRoot = Buffer.from(buffer.subarray(36, 68)).reverse().toString("hex");
-		const timestamp = buffer.readUInt32LE(68);
-		const bits = buffer.readUInt32LE(72);
-		const nonce = buffer.readUInt32LE(76);
+		const hash = bytesToHex(sha256(sha256(buffer)).reverse());
+		const version = readUInt32LE(buffer, 0);
+		const prevHash = bytesToHex(buffer.subarray(4, 36).reverse());
+		const merkleRoot = bytesToHex(buffer.subarray(36, 68).reverse());
+		const timestamp = readUInt32LE(buffer, 68);
+		const bits = readUInt32LE(buffer, 72);
+		const nonce = readUInt32LE(buffer, 76);
 
 		return {
 			hash,
@@ -65,23 +67,23 @@ export namespace BlockHeader {
 
 export type Block = {
 	readonly header: BlockHeader;
-	readonly body: Buffer;
-	readonly raw: Buffer;
+	readonly body: Uint8Array;
+	readonly raw: Uint8Array;
 };
 export namespace Block {
 	export type Init = {
 		readonly header: BlockHeader;
-		readonly body: Buffer;
+		readonly body: Uint8Array;
 	};
 
 	export function create(init: Block.Init): Block {
 		return {
 			...init,
-			raw: Buffer.concat([init.header.raw, init.body]),
+			raw: concatBytes([init.header.raw, init.body]),
 		};
 	}
 
-	export function fromBuffer(buffer: Buffer): Block {
+	export function fromBuffer(buffer: Uint8Array): Block {
 		const headerBuffer = buffer.subarray(0, 80);
 		const header = BlockHeader.fromBuffer(headerBuffer);
 
@@ -106,8 +108,8 @@ export abstract class Chain {
 	abstract getBlock(hash: string): Block | undefined;
 	abstract getTip(): BlockHeader;
 	abstract getHeight(): number;
-	abstract has(hash: Buffer | string): boolean;
-	abstract nextBlockHeader(hash: Buffer | string): { hash: string; raw: Buffer } | null;
+	abstract has(hash: Uint8Array | string): boolean;
+	abstract nextBlockHeader(hash: Uint8Array | string): { hash: string; raw: Uint8Array } | null;
 }
 
 // BlockValidator: validates headers and blocks

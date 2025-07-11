@@ -1,5 +1,6 @@
-import { Block, BlockHeader, BlockValidator } from "~/Blocks.js";
-import { createHash } from "crypto";
+import { Block, BlockHeader, BlockValidator } from "~/Blocks.ts";
+import { bytesToHex, hexToBytes, writeBytes, writeUInt32LE } from "./utils.ts";
+import { sha256 } from "@noble/hashes/sha2";
 
 // Decode Bitcoin compact target ("bits") into bigint
 function bitsToTarget(bits: number): bigint {
@@ -10,24 +11,24 @@ function bitsToTarget(bits: number): bigint {
 }
 
 // Double SHA256 of 80-byte header
-function hashHeader(header: BlockHeader): Buffer {
-	const headerBuf = Buffer.alloc(80);
+function hashHeader(header: BlockHeader): Uint8Array {
+	const buffer = new Uint8Array(80);
 	let offset = 0;
 
-	headerBuf.writeUInt32LE(header.version, offset);
+	writeUInt32LE(buffer, header.version, offset);
 	offset += 4;
-	Buffer.from(header.prevHash, "hex").reverse().copy(headerBuf, offset);
+	writeBytes(buffer, hexToBytes(header.prevHash).reverse(), offset)
 	offset += 32;
-	Buffer.from(header.merkleRoot, "hex").reverse().copy(headerBuf, offset);
+	writeBytes(buffer, hexToBytes(header.merkleRoot).reverse(), offset)
 	offset += 32;
-	headerBuf.writeUInt32LE(header.timestamp, offset);
+	writeUInt32LE(buffer, header.timestamp, offset);
 	offset += 4;
-	headerBuf.writeUInt32LE(header.bits, offset);
+	writeUInt32LE(buffer, header.bits, offset);
 	offset += 4;
-	headerBuf.writeUInt32LE(header.nonce, offset);
+	writeUInt32LE(buffer, header.nonce, offset);
 
-	const hash1 = createHash("sha256").update(headerBuf).digest();
-	const hash2 = createHash("sha256").update(hash1).digest();
+	const hash1 = sha256(buffer);
+	const hash2 = sha256(hash1);
 	return hash2;
 }
 
@@ -40,7 +41,7 @@ export class BasicBlockValidator extends BlockValidator {
 
 		// Check PoW: hash must be <= target
 		const hashBuf = hashHeader(header);
-		const hashInt = BigInt("0x" + Buffer.from(hashBuf).reverse().toString("hex"));
+		const hashInt = BigInt("0x" + bytesToHex(hashBuf.reverse()));
 		const target = bitsToTarget(header.bits);
 
 		return hashInt <= target;
