@@ -1,0 +1,108 @@
+generator client {
+    provider = "deno run -A npm:prisma-kysely"
+    output   = "./generated"
+}
+
+datasource db {
+    provider = "sqlite"
+    url      = "file:./prototype.sqlite"
+}
+
+model Block {
+    blockHeight BigInt @id
+    // hash is stored somewhere else.
+
+    version    Int
+    timestamp  Int
+    bits       Int
+    nonce      Int
+    merkleRoot Bytes
+
+    prevHeight BigInt? @unique
+    prevBlock  Block?  @relation("blockchain", fields: [prevHeight], references: [blockHeight])
+    nextBlock  Block?  @relation("blockchain")
+
+    txs Tx[]
+}
+
+model Tx {
+    index       BigInt @id
+    blockHeight BigInt
+
+    version    Int
+    lockTime   Int
+    hasWitness Boolean
+
+    block   Block      @relation(fields: [blockHeight], references: [blockHeight])
+    inputs  TxInput[]
+    outputs TxOutput[]
+}
+
+model TxOutput {
+    index BigInt @id
+
+    value         BigInt
+    lockingScript Bytes  @map("scriptPubKey")
+
+    tx      Tx     @relation(fields: [txIndex], references: [index])
+    txIndex BigInt
+
+    spentBy TxInput? @relation("utxo")
+}
+
+model TxInput {
+    index    BigInt @id
+    sequence Int
+
+    tx      Tx     @relation(fields: [txIndex], references: [index])
+    txIndex BigInt
+
+    output                TxOutput @relation("utxo", fields: [outputIndex], references: [index])
+    outputIndex           BigInt   @unique
+    outputUnlockingScript Bytes?   @map("scriptSig")
+
+    witnessP2WPKH  WitnessP2WPKH?
+    witnessP2WSH   WitnessP2WSH?
+    witnessP2TR    WitnessP2TR?
+    witnessP2SH    WitnessP2SH?
+    witnessP2PKH   WitnessP2PKH?
+    witnessUnknown Bytes?
+}
+
+model WitnessP2WPKH {
+    inputIndex BigInt @id
+    pubkey     Bytes
+    sig        Bytes
+
+    input TxInput @relation(fields: [inputIndex], references: [index])
+}
+
+model WitnessP2WSH {
+    inputIndex   BigInt @id
+    redeemScript Bytes
+
+    input TxInput @relation(fields: [inputIndex], references: [index])
+}
+
+model WitnessP2TR {
+    inputIndex   BigInt @id
+    controlBlock Bytes
+    tapscript    Bytes
+
+    input TxInput @relation(fields: [inputIndex], references: [index])
+}
+
+model WitnessP2SH {
+    inputIndex   BigInt @id
+    redeemScript Bytes
+
+    input TxInput @relation(fields: [inputIndex], references: [index])
+}
+
+model WitnessP2PKH {
+    inputIndex BigInt @id
+    pubkey     Bytes
+    sig        Bytes
+
+    input TxInput @relation(fields: [inputIndex], references: [index])
+}

@@ -1,0 +1,19 @@
+generator client {
+    provider = "deno run -A npm:prisma-kysely"
+    output   = "./generated"
+}
+
+datasource db {
+    provider = "sqlite"
+    url      = "file:./prototype.sqlite"
+}
+
+model BlockHash {
+    shortestUniqueBlockHash Bytes  @id
+    blockHeight             BigInt
+}
+
+model TxHash {
+    shortestUniqueTxHash Bytes  @id
+    txId                 BigInt
+}

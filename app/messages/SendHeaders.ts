@@ -1,6 +1,6 @@
 import { Peer } from "~/Peers.ts";
 
-export type SendHeaders = {};
+export type SendHeaders = { [K in never]: never };
 export const SendHeaders: Peer.MessageType<SendHeaders> = {
 	command: "sendheaders",
 	serialize: () => new Uint8Array(0),

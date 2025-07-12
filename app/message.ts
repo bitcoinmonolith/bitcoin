@@ -9,13 +9,13 @@ import { SendCmpct } from "./messages/SendCmpct.ts";
 import { GetHeaders } from "./messages/GetHeaders.ts";
 import { Headers } from "./messages/Headers.ts";
 import { Inv } from "./messages/Inv.ts";
-import { randomBytes } from "@noble/hashes/utils";
-import { bytesToHex, readUInt64LE } from "./utils.ts";
+import { bytesToHex, randomBytes } from "@noble/hashes/utils";
 
 export const SendHeadersHandler: Message<SendHeaders> = {
 	type: SendHeaders,
 	async handler({ peer }) {
 		peer.log(`🪪 Peer prefers headers over inv`);
+		// TODO: Handle
 	},
 };
 
@@ -27,7 +27,7 @@ export const PingHandler: Message<Ping> = {
 	},
 };
 export async function ping(ctx: Bitcoin, peer: Peer) {
-	const nonce = readUInt64LE(randomBytes(8), 0);
+	const nonce = new DataView(randomBytes(8).buffer).getBigUint64(0, true);
 	await peer.send(Ping, { nonce });
 	await ctx.expect(peer, Pong, (pong) => pong.nonce === nonce);
 	peer.log("🏓 Pong received");
@@ -40,22 +40,8 @@ export const VersionHandler: Message<Version> = {
 		await peer.send(Verack, {});
 	},
 };
-export async function handshake(ctx: Bitcoin, peer: Peer) {
-	const versionData: Version = {
-		version: 70015,
-		services: 1n,
-		timestamp: BigInt(Math.floor(Date.now() / 1000)),
-		recvServices: 1n,
-		recvPort: 18333,
-		transServices: 1n,
-		transPort: 18333,
-		nonce: 987654321n,
-		userAgent: "/Satoshi:MyCustomNode:0.2/",
-		startHeight: 150000,
-		relay: true,
-	};
-
-	await peer.send(Version, versionData);
+export async function handshake(ctx: Bitcoin, peer: Peer, version: Version) {
+	await peer.send(Version, version);
 	peer.log(`📗 Sent version`);
 	await ctx.expect(peer, Verack, () => true);
 	peer.log(`✅ Handshake complete`);
@@ -75,13 +61,13 @@ export const GetHeadersHandler: Message<GetHeaders> = {
 
 		peer.log(`📚 Received getheaders (locator count: ${data.hashes.length})`);
 
-		let known: string | undefined;
+		return;
+		let known: Uint8Array | undefined;
 
 		// 1. Find first known hash
 		for (const locator of data.hashes) {
-			const hex = bytesToHex(locator);
-			if (chain.has(hex)) {
-				known = hex;
+			if (chain.has(locator)) {
+				known = locator;
 				break;
 			}
 		}
@@ -97,7 +83,7 @@ export const GetHeadersHandler: Message<GetHeaders> = {
 
 		while (next && headers.length < 2000) {
 			headers.push(next.raw);
-			if (next.hash === bytesToHex(data.stopHash)) break;
+			if (next.hash === bytesToHex(data.stop_hash)) break;
 			next = chain.nextBlockHeader(next.hash);
 		}
 

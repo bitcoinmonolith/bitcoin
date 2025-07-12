@@ -1,5 +1,5 @@
 import { Peer } from "~/Peers.ts";
-import { readUInt32LE, readUInt8, writeBytes, writeUInt32LE, writeUInt8 } from "../utils.ts";
+import { BytesView } from "../BytesView.ts";
 
 export type InvVector = {
 	type: number; // 1 = tx, 2 = block, etc.
@@ -19,31 +19,35 @@ export const Inv: Peer.MessageType<Inv> = {
 		}
 
 		const count = data.inventory.length;
-		const buffer = new Uint8Array(1 + count * 36);
+		const bytes = new Uint8Array(1 + count * 36);
+		const view = BytesView(bytes);
+
 		let offset = 0;
 
-		writeUInt8(buffer, count, offset);
+		view.setUint8(offset, count);
 		offset += 1;
 
 		for (const { type, hash } of data.inventory) {
-			writeUInt32LE(buffer, type, offset);
+			view.setUint32(offset, type, true);
 			offset += 4;
-			writeBytes(buffer, hash, offset);
+			bytes.set(hash, offset);
 			offset += 32;
 		}
 
-		return buffer;
+		return bytes;
 	},
 
-	deserialize(buffer) {
+	deserialize(bytes) {
+		const view = BytesView(bytes);
 		let offset = 0;
-		const count = readUInt8(buffer, offset++);
+
+		const count = view.getUint8(offset++);
 		const inventory: InvVector[] = [];
 
 		for (let i = 0; i < count; i++) {
-			const type = readUInt32LE(buffer, offset);
-			offset += 4;
-			const hash = buffer.subarray(offset, offset + 32);
+			const type = view.getUint32(offset, true);
+			offset += 32 / 8;
+			const hash = bytes.subarray(offset, offset + 32);
 			offset += 32;
 
 			inventory.push({ type, hash });

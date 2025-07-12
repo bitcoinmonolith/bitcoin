@@ -1,7 +1,8 @@
 {
     "imports": {
+        "@noble/curves": "jsr:@noble/curves@^1.9.0",
         "@noble/hashes": "jsr:@noble/hashes@^1.8.0",
-        "~/": "./src/"  
+        "~/": "./app/"  
     },
     "compilerOptions": {
         "types": ["deno.ns"],

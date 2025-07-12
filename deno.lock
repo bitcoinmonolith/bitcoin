@@ -1,10 +1,18 @@
 {
   "version": "5",
   "specifiers": {
+    "jsr:@noble/curves@^1.9.0": "1.9.0",
+    "jsr:@noble/hashes@1.8.0": "1.8.0",
     "jsr:@noble/hashes@^1.8.0": "1.8.0",
     "npm:@types/node@*": "22.15.15"
   },
   "jsr": {
+    "@noble/curves@1.9.0": {
+      "integrity": "efa55b3375b755706462a083060ee91e1f79973568cb670f02e885538ed1661b",
+      "dependencies": [
+        "jsr:@noble/hashes@1.8.0"
+      ]
+    },
     "@noble/hashes@1.8.0": {
       "integrity": "b52a2fcb4d02f8d8137871564a31f1ee9e2b0d15eedabbf32d2f7333f0abc939"
     }
@@ -29,6 +37,7 @@
   },
   "workspace": {
     "dependencies": [
+      "jsr:@noble/curves@^1.9.0",
       "jsr:@noble/hashes@^1.8.0"
     ]
   }

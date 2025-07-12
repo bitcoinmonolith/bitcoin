@@ -1,7 +1,4 @@
-import { BasicBlockValidator } from "./BasicBlockValidator.ts";
-import { BlockStore, BlockValidator, Chain } from "./Blocks.ts";
-import { MemoryBlockStore } from "./MemoryBlockStore.ts";
-import { MemoryChain } from "./MemoryChain.ts";
+import { Validator } from "./Validator.ts";
 import { Peer } from "./Peers.ts";
 
 export type Message<T> = {
@@ -15,7 +12,8 @@ export type MessageEvent<T> = {
 	ctx: Bitcoin;
 };
 
-export type MessageExpector<T> = {
+// deno-lint-ignore no-explicit-any
+export type MessageExpector<T = any> = {
 	type: Peer.MessageType<T>;
 	resolvers: PromiseWithResolvers<T>;
 	matcher(data: T): boolean;
@@ -23,46 +21,40 @@ export type MessageExpector<T> = {
 
 export class Bitcoin {
 	private readonly handlers: readonly Message<unknown>[];
-	private readonly handlersMap: ReadonlyMap<string, Message<unknown>>;
-	private readonly handlersQueueByPeer: WeakMap<Peer, { busy: boolean; calls: { (): Promise<void> }[] }>;
-	private readonly expectorsByTypeByPeer: WeakMap<Peer, Map<string, Set<MessageExpector<any>>>>;
+	private readonly handlers_map: ReadonlyMap<string, Message<unknown>>;
+	private readonly handlers_queue_by_peer: WeakMap<Peer, { busy: boolean; calls: { (): Promise<void> }[] }>;
+	private readonly expectors_by_type_by_peer: WeakMap<Peer, Map<string, Set<MessageExpector>>>;
 
 	public readonly peers = new Set<Peer>();
-	public readonly validator: BlockValidator;
-	public readonly store: BlockStore;
-	public readonly chain: Chain;
+	public readonly validator: Validator;
 
-	private readonly onStart: (ctx: Bitcoin) => Promise<void>;
-	private readonly onTick: (ctx: Bitcoin) => Promise<void>;
+	private readonly on_start: (ctx: Bitcoin) => Promise<void>;
+	private readonly on_tick: (ctx: Bitcoin) => Promise<void>;
 
 	constructor(params: {
 		handlers: readonly Message<unknown>[];
-		validator: BasicBlockValidator;
-		store: MemoryBlockStore;
-		chain: MemoryChain;
-		onStart(ctx: Bitcoin): Promise<void>;
-		onTick(ctx: Bitcoin): Promise<void>;
+		validator: Validator;
+		on_start(ctx: Bitcoin): Promise<void>;
+		on_tick(ctx: Bitcoin): Promise<void>;
 	}) {
 		this.handlers = params.handlers;
 		this.validator = params.validator;
-		this.store = params.store;
-		this.chain = params.chain;
 
-		this.onStart = params.onStart;
-		this.onTick = params.onTick;
+		this.on_start = params.on_start;
+		this.on_tick = params.on_tick;
 
 		this.peers = new Set<Peer>();
-		this.handlersMap = new Map(this.handlers.map((handler) => [handler.type.command, handler] as const));
-		this.handlersQueueByPeer = new WeakMap<Peer, { busy: boolean; calls: { (): Promise<void> }[] }>();
-		this.expectorsByTypeByPeer = new WeakMap<Peer, Map<string, Set<MessageExpector<any>>>>();
+		this.handlers_map = new Map(this.handlers.map((handler) => [handler.type.command, handler] as const));
+		this.handlers_queue_by_peer = new WeakMap<Peer, { busy: boolean; calls: { (): Promise<void> }[] }>();
+		this.expectors_by_type_by_peer = new WeakMap<Peer, Map<string, Set<MessageExpector>>>();
 	}
 
 	public async start() {
-		await this.onStart(this);
+		await this.on_start(this);
 
 		while (true) {
 			try {
-				await this.onTick(this);
+				await this.on_tick(this);
 				await this.tick();
 			} catch (error) {
 				console.error("UNEXPECTED ERROR:", error);
@@ -72,21 +64,21 @@ export class Bitcoin {
 		}
 	}
 
-	private async tick() {
+	private tick() {
 		for (const peer of this.peers) {
 			if (!peer.connected) {
 				this.peers.delete(peer);
 				continue;
 			}
 
-			const expectorsByType = this.expectorsByTypeByPeer.get(peer);
+			const expectorsByType = this.expectors_by_type_by_peer.get(peer);
 
-			let commandQueue = this.handlersQueueByPeer.get(peer);
+			let commandQueue = this.handlers_queue_by_peer.get(peer);
 			if (!commandQueue) {
-				this.handlersQueueByPeer.set(peer, (commandQueue = { busy: false, calls: [] }));
+				this.handlers_queue_by_peer.set(peer, commandQueue = { busy: false, calls: [] });
 			}
 
-			for (const message of peer.consumeMessages()) {
+			for (const message of peer.consume_messages()) {
 				const expectors = expectorsByType?.get(message.command);
 				if (expectors?.size) {
 					for (const expector of expectors) {
@@ -99,7 +91,7 @@ export class Bitcoin {
 					continue;
 				}
 
-				const handler = this.handlersMap.get(message.command);
+				const handler = this.handlers_map.get(message.command);
 				if (handler) {
 					const data = handler.type.deserialize(message.payload);
 					commandQueue.calls.push(() => {
@@ -125,13 +117,13 @@ export class Bitcoin {
 	}
 
 	public expect<T>(peer: Peer, type: Peer.MessageType<T>, matcher: (data: T) => boolean) {
-		let expectorsByType = this.expectorsByTypeByPeer.get(peer);
+		let expectorsByType = this.expectors_by_type_by_peer.get(peer);
 		if (!expectorsByType) {
-			this.expectorsByTypeByPeer.set(peer, (expectorsByType = new Map()));
+			this.expectors_by_type_by_peer.set(peer, expectorsByType = new Map());
 		}
 		let expectors = expectorsByType.get(type.command);
 		if (!expectors) {
-			expectorsByType.set(type.command, (expectors = new Set()));
+			expectorsByType.set(type.command, expectors = new Set());
 		}
 
 		const resolvers = Promise.withResolvers<T>();

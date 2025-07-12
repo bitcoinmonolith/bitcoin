@@ -1,7 +1,10 @@
 - [x] Convert Node code to Deno
 - [ ] Use ArrayBuffer instead of Uint8Array, use it for reading and writing only as wrapper.
-- [ ] Instead of hex string, use ArrayBuffer.
+- [x] Instead of hex string, use ArrayBuffer.
+- [ ] refactor for this_casing instead of thisOne (keep the type like stuff as LikeThis)
+- [ ] make messages actually parse the data
 - [ ] Make sure code is simple and makes sense.
+- [ ] impliment bitcoin script and opcodes
 - [ ] Decode, parse and verify txs inside blocks.
 - [ ] Make the database/compression as you imagined (you know)
 - [ ] Put the blocks inside the database, utxo and shit. you know the shit.
