@@ -1,4 +1,4 @@
-export function write_var_int(n: number | bigint): Uint8Array {
+export function writeVarInt(n: number | bigint): Uint8Array {
 	if (typeof n === "number") {
 		if (n < 0xfd) {
 			return Uint8Array.of(n);
@@ -25,7 +25,7 @@ export function write_var_int(n: number | bigint): Uint8Array {
 	return buf;
 }
 
-export function read_var_int(bytes: Uint8Array, offset: number): [value: number | bigint, offset: number] {
+export function readVarInt(bytes: Uint8Array, offset: number): [value: number | bigint, offset: number] {
 	const first = bytes[offset]!;
 	if (first < 0xfd) {
 		return [first, offset + 1];
@@ -47,7 +47,7 @@ export function read_var_int(bytes: Uint8Array, offset: number): [value: number 
 	throw new Error("Invalid VarInt prefix");
 }
 
-export function read_var_int_number(bytes: Uint8Array, offset: number): [value: number, offset: number] {
-	const [arg1, arg2] = read_var_int(bytes, offset);
+export function readVarIntNumber(bytes: Uint8Array, offset: number): [value: number, offset: number] {
+	const [arg1, arg2] = readVarInt(bytes, offset);
 	return [Number(arg1), arg2];
 }

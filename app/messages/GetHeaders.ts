@@ -4,7 +4,7 @@ import { BytesView } from "../BytesView.ts";
 export type GetHeaders = {
 	version: number;
 	hashes: Uint8Array[]; // block locator hashes
-	stop_hash: Uint8Array;
+	stopHash: Uint8Array;
 };
 
 export const GetHeaders: Peer.Message<GetHeaders> = {
@@ -33,11 +33,11 @@ export const GetHeaders: Peer.Message<GetHeaders> = {
 			offset += hash.byteLength;
 		}
 
-		if (data.stop_hash.byteLength !== 32) {
+		if (data.stopHash.byteLength !== 32) {
 			throw new Error("Invalid stopHash length");
 		}
-		bytes.set(data.stop_hash, offset);
-		offset += data.stop_hash.byteLength;
+		bytes.set(data.stopHash, offset);
+		offset += data.stopHash.byteLength;
 
 		return bytes.subarray(0, offset);
 	},
@@ -57,9 +57,9 @@ export const GetHeaders: Peer.Message<GetHeaders> = {
 			offset += 32;
 		}
 
-		const stop_hash = bytes.subarray(offset, offset + 32);
+		const stopHash = bytes.subarray(offset, offset + 32);
 		offset += 32;
 
-		return { version, hashes, stop_hash };
+		return { version, hashes, stopHash };
 	},
 };

@@ -11,23 +11,23 @@ import { Block } from "./messages/Block.ts";
 import { GetData } from "./messages/GetData.ts";
 import { SendHeaders } from "./messages/SendHeaders.ts";
 import { Version } from "./messages/Version.ts";
-import { bytes_equal } from "./utils/bytes.ts";
+import { bytesEqual } from "./utils/bytes.ts";
 
 const NETWORK_MAGIC = hexToBytes("f9beb4d9"); // Mainnet
-// const NETWORK_MAGIC = hexToBytes("0b110907"); // Testnet
+/* const NETWORK_MAGIC = hexToBytes("0b110907"); // Testnet
 const PEER_PORT = 18333;
 const DNS_SEEDS = [
 	"testnet-seed.bitcoin.jonasschnelli.ch",
 	"seed.tbtc.petertodd.org",
 	"testnet-seed.bluematt.me",
 	"testnet-seed.bitcoin.sprovoost.nl",
-];
+]; */
 
 const bitcoin = new Bitcoin({
 	handlers: [VersionHandler, PingHandler, SendCmpctHandler, GetHeadersHandler, InvHandler],
 	validator: new Validator(),
-	async on_start(ctx) {
-		async function* resolvePeers(seeds: readonly string[]) {
+	onStart(ctx) {
+		/* async function* resolvePeers(seeds: readonly string[]) {
 			for (const seed of seeds) {
 				try {
 					const peerAddresses = await Deno.resolveDns(seed, "A");
@@ -40,7 +40,7 @@ const bitcoin = new Bitcoin({
 			}
 		}
 
-		/* let peer_count = 0;
+		let peer_count = 0;
 		for await (const host of resolvePeers(DNS_SEEDS)) {
 			if (++peer_count > 8) break;
 			const peer = new Peer(host, PEER_PORT, NETWORK_MAGIC);
@@ -88,12 +88,12 @@ const bitcoin = new Bitcoin({
 				await ctx.expect(
 					peer,
 					Block,
-					(block) => bytes_equal(block.header.hash.reverse(), genesis),
+					(block) => bytesEqual(block.header.hash.reverse(), genesis),
 				),
 			);
 		});
 	},
-	async on_tick() {},
+	async onTick() {},
 });
 
 await bitcoin.start();

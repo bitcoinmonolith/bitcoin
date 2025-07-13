@@ -1,6 +1,6 @@
 import { DataType } from "../DataType.ts";
-import { bytes_concat } from "../utils/bytes.ts";
-import { read_var_int_number, write_var_int } from "../utils/encoding.ts";
+import { bytesConcat } from "../utils/bytes.ts";
+import { readVarIntNumber, writeVarInt } from "../utils/encoding.ts";
 
 export type Tx = {
 	version: number;
@@ -44,7 +44,7 @@ export const Tx: DataType<Tx[]> = {
 			}
 
 			// Inputs
-			txChunks.push(write_var_int(tx.inputs.length));
+			txChunks.push(writeVarInt(tx.inputs.length));
 			for (const input of tx.inputs) {
 				// Reverse txid
 				txChunks.push(input.txid.slice().reverse());
@@ -53,7 +53,7 @@ export const Tx: DataType<Tx[]> = {
 				new DataView(voutBuf.buffer).setUint32(0, input.vout, true);
 				txChunks.push(voutBuf);
 
-				txChunks.push(write_var_int(input.scriptSig.length));
+				txChunks.push(writeVarInt(input.scriptSig.length));
 				txChunks.push(input.scriptSig);
 
 				const seqBuf = new Uint8Array(4);
@@ -62,13 +62,13 @@ export const Tx: DataType<Tx[]> = {
 			}
 
 			// Outputs
-			txChunks.push(write_var_int(tx.outputs.length));
+			txChunks.push(writeVarInt(tx.outputs.length));
 			for (const output of tx.outputs) {
 				const valBuf = new Uint8Array(8);
 				new DataView(valBuf.buffer).setBigUint64(0, output.value, true);
 				txChunks.push(valBuf);
 
-				txChunks.push(write_var_int(output.scriptPubKey.length));
+				txChunks.push(writeVarInt(output.scriptPubKey.length));
 				txChunks.push(output.scriptPubKey);
 			}
 
@@ -76,9 +76,9 @@ export const Tx: DataType<Tx[]> = {
 			if (hasWitness) {
 				for (const input of tx.inputs) {
 					const witness = input.witness ?? [];
-					txChunks.push(write_var_int(witness.length));
+					txChunks.push(writeVarInt(witness.length));
 					for (const item of witness) {
-						txChunks.push(write_var_int(item.length));
+						txChunks.push(writeVarInt(item.length));
 						txChunks.push(item);
 					}
 				}
@@ -90,10 +90,10 @@ export const Tx: DataType<Tx[]> = {
 			txChunks.push(lockBuf);
 
 			// Combine txChunks
-			chunks.push(bytes_concat(...txChunks));
+			chunks.push(bytesConcat(...txChunks));
 		}
 
-		return bytes_concat(...chunks);
+		return bytesConcat(...chunks);
 	},
 	deserialize(bytes) {
 		let offset = 0;
@@ -113,7 +113,7 @@ export const Tx: DataType<Tx[]> = {
 				offset += 2;
 			}
 
-			const [vinCount, vinOff] = read_var_int_number(bytes, offset);
+			const [vinCount, vinOff] = readVarIntNumber(bytes, offset);
 			offset = vinOff;
 
 			const inputs: Tx.Input[] = [];
@@ -124,11 +124,11 @@ export const Tx: DataType<Tx[]> = {
 				const vout = new DataView(bytes.buffer, bytes.byteOffset + offset, 4).getUint32(0, true);
 				offset += 4;
 
-				const [script_length, scriptOff] = read_var_int_number(bytes, offset);
+				const [ScriptLen, scriptOff] = readVarIntNumber(bytes, offset);
 				offset = scriptOff;
 
-				const scriptSig = bytes.slice(offset, offset + script_length);
-				offset += script_length;
+				const scriptSig = bytes.slice(offset, offset + ScriptLen);
+				offset += ScriptLen;
 
 				const sequence = new DataView(bytes.buffer, bytes.byteOffset + offset, 4).getUint32(0, true);
 				offset += 4;
@@ -136,7 +136,7 @@ export const Tx: DataType<Tx[]> = {
 				inputs.push({ txid, vout, scriptSig, sequence });
 			}
 
-			const [voutCount, voutOff] = read_var_int_number(bytes, offset);
+			const [voutCount, voutOff] = readVarIntNumber(bytes, offset);
 			offset = voutOff;
 
 			const outputs: Tx.Output[] = [];
@@ -144,7 +144,7 @@ export const Tx: DataType<Tx[]> = {
 				const value = new DataView(bytes.buffer, bytes.byteOffset + offset, 8).getBigUint64(0, true);
 				offset += 8;
 
-				const [pkLen, pkOff] = read_var_int_number(bytes, offset);
+				const [pkLen, pkOff] = readVarIntNumber(bytes, offset);
 				offset = pkOff;
 
 				const scriptPubKey = bytes.slice(offset, offset + pkLen);
@@ -155,13 +155,13 @@ export const Tx: DataType<Tx[]> = {
 
 			if (hasWitness) {
 				for (let i = 0; i < vinCount; i++) {
-					const [itemCount, itemOff] = read_var_int_number(bytes, offset);
+					const [itemCount, itemOff] = readVarIntNumber(bytes, offset);
 					offset = itemOff;
 
 					const items: Uint8Array[] = [];
 
 					for (let j = 0; j < itemCount; j++) {
-						const [len, lenOff] = read_var_int_number(bytes, offset);
+						const [len, lenOff] = readVarIntNumber(bytes, offset);
 						offset = lenOff;
 
 						const item = bytes.slice(offset, offset + len);

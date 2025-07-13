@@ -3,8 +3,8 @@ import { CommandBuffer } from "./CommandBuffer.ts";
 import { DataType } from "./DataType.ts";
 import { BytesView } from "./BytesView.ts";
 
-const text_encoder = new TextEncoder();
-const text_decoder = new TextDecoder("ascii");
+const textEncoder = new TextEncoder();
+const textDecoder = new TextDecoder("ascii");
 
 export declare namespace Peer {
 	export type MessagePayload = {
@@ -29,7 +29,7 @@ export class Peer {
 	public readonly port: number;
 	public readonly magic: Uint8Array;
 
-	private readonly message_command_buffer = new CommandBuffer<Peer.MessagePayload>();
+	private readonly messageCommandBuffer = new CommandBuffer<Peer.MessagePayload>();
 	private connection: Deno.Conn | null = null;
 
 	constructor(host: string, port: number, magic: Uint8Array) {
@@ -43,23 +43,23 @@ export class Peer {
 
 		this.log(`🌐 Connecting to peer...`);
 
-		const abort_controller = new AbortController();
-		setTimeout(() => abort_controller.abort(), 5000);
+		const abortController = new AbortController();
+		setTimeout(() => abortController.abort(), 5000);
 
 		// Establish TCP connection using Deno.connect
-		const connection_promise = Deno.connect({
+		const connectionPromise = Deno.connect({
 			hostname: this.host,
 			port: this.port,
 			transport: "tcp",
-			signal: abort_controller.signal,
+			signal: abortController.signal,
 		});
 
-		this.connection = await connection_promise;
+		this.connection = await connectionPromise;
 		this.#connected = true;
 		this.log(`✅ Connected to peer`);
 
 		// Start reading from connection
-		connection_promise.then(async (connection) => {
+		connectionPromise.then(async (connection) => {
 			let inbox: Uint8Array = new Uint8Array(0);
 
 			try {
@@ -70,40 +70,40 @@ export class Peer {
 					if (n === 0) continue;
 
 					{
-						const inbox_cache = inbox;
-						inbox = new Uint8Array(inbox_cache.byteLength + n);
-						inbox.set(inbox_cache, 0);
-						inbox.set(bytes.subarray(0, n), inbox_cache.byteLength);
+						const indexCache = inbox;
+						inbox = new Uint8Array(indexCache.byteLength + n);
+						inbox.set(indexCache, 0);
+						inbox.set(bytes.subarray(0, n), indexCache.byteLength);
 					}
 
 					while (inbox.length >= 24) {
 						// Check magic
-						let is_magic = true;
+						let isMagic = true;
 						for (let i = 0; i < 4; i++) {
 							if (inbox[i] !== this.magic[i]) {
-								is_magic = false;
+								isMagic = false;
 								break;
 							}
 						}
-						if (!is_magic) {
+						if (!isMagic) {
 							this.logWarn(
 								"⚠️ Bad magic. Skipping. Saw command:",
-								text_decoder.decode(inbox.subarray(4, 16)).replace(/\0+$/, ""),
+								textDecoder.decode(inbox.subarray(4, 16)).replace(/\0+$/, ""),
 							);
 							inbox = inbox.subarray(1); // try again from next byte
 							continue;
 						}
 
-						const inbox_view = new DataView(inbox.buffer, inbox.byteOffset);
-						const length = inbox_view.getUint32(16, true);
-						const total_length = 24 + length;
-						if (inbox.length < total_length) break;
+						const indexView = new DataView(inbox.buffer, inbox.byteOffset);
+						const length = indexView.getUint32(16, true);
+						const totalLength = 24 + length;
+						if (inbox.length < totalLength) break;
 
-						const command = text_decoder.decode(inbox.subarray(4, 16)).replace(/\0+$/, "");
-						const payload = inbox.subarray(24, total_length);
+						const command = textDecoder.decode(inbox.subarray(4, 16)).replace(/\0+$/, "");
+						const payload = inbox.subarray(24, totalLength);
 
-						this.message_command_buffer.push({ command, payload });
-						inbox = inbox.subarray(total_length);
+						this.messageCommandBuffer.push({ command, payload });
+						inbox = inbox.subarray(totalLength);
 					}
 				}
 			} catch (err) {
@@ -133,10 +133,10 @@ export class Peer {
 
 		bytes.set(this.magic, 0);
 		// Write command as ascii, pad with zeros
-		const command_bytes = text_encoder.encode(message.command);
-		bytes.set(command_bytes, 4);
+		const commandBytes = textEncoder.encode(message.command);
+		bytes.set(commandBytes, 4);
 		// Zero fill up to 16 bytes
-		for (let i = 4 + command_bytes.length; i < 16; ++i) bytes[i] = 0;
+		for (let i = 4 + commandBytes.length; i < 16; ++i) bytes[i] = 0;
 		view.setUint32(16, payload.length, true);
 		bytes.set(sha256(sha256(payload)).subarray(0, 4), 20);
 		bytes.set(payload, 24);
@@ -146,8 +146,8 @@ export class Peer {
 		await this.connection.write(bytes);
 	}
 
-	consume_messages() {
-		return this.message_command_buffer.consume();
+	consumeMessages() {
+		return this.messageCommandBuffer.consume();
 	}
 
 	log(...params: unknown[]) {

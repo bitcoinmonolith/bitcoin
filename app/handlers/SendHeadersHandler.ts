@@ -3,7 +3,7 @@ import { SendHeaders } from "../messages/SendHeaders.ts";
 
 export const SendHeadersHandler: Bitcoin.MessageHandler<SendHeaders> = {
 	message: SendHeaders,
-	async handle({ peer }) {
+	handle({ peer }) {
 		peer.log(`🪪 Peer prefers headers over inv`);
 		// TODO: Handle
 	},

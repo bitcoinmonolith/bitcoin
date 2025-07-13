@@ -1,17 +1,17 @@
 import { Peer } from "../Peer.ts";
 import { BytesView } from "../BytesView.ts";
 
-const type_key_to_byte = {
+const typeKeyToByte = {
 	TX: 1,
 	BLOCK: 2,
 };
 
-const type_byte_to_key = new Map(
-	Object.entries(type_key_to_byte).map(([key, value]) => [value, key as keyof typeof type_key_to_byte] as const),
+const typeByteToKey = new Map(
+	Object.entries(typeKeyToByte).map(([key, value]) => [value, key as keyof typeof typeKeyToByte] as const),
 );
 
 export type InvVector = {
-	type: keyof typeof type_key_to_byte; // 1 = tx, 2 = block, etc.
+	type: keyof typeof typeKeyToByte; // 1 = tx, 2 = block, etc.
 	hash: Uint8Array; // 32 bytes
 };
 
@@ -37,7 +37,7 @@ export const Inv: Peer.Message<Inv> = {
 		offset += 1;
 
 		for (const { type, hash } of data.inventory) {
-			view.setUint32(offset, type_key_to_byte[type], true);
+			view.setUint32(offset, typeKeyToByte[type], true);
 			offset += 4;
 			bytes.set(hash, offset);
 			offset += 32;
@@ -53,7 +53,7 @@ export const Inv: Peer.Message<Inv> = {
 		const inventory: InvVector[] = [];
 
 		for (let i = 0; i < count; i++) {
-			const type = type_byte_to_key.get(view.getUint32(offset, true));
+			const type = typeByteToKey.get(view.getUint32(offset, true));
 			if (!type) {
 				throw new Error(`Unknown inventory type byte: ${view.getUint32(0, true)}`);
 			}
