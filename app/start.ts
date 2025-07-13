@@ -1,6 +1,6 @@
 import { hexToBytes } from "@noble/hashes/utils";
 import { Bitcoin } from "./Bitcoin.ts";
-import { Peer } from "./Peers.ts";
+import { Peer } from "./Peer.ts";
 import { Validator } from "./Validator.ts";
 import { GetHeadersHandler } from "./handlers/GetHeadersHandler.ts";
 import { InvHandler } from "./handlers/InvHandler.ts";

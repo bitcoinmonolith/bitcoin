@@ -1,4 +1,4 @@
-import { Peer } from "../Peers.ts";
+import { Peer } from "../Peer.ts";
 
 const type_key_to_byte = {
 	TX: 1,

@@ -1,4 +1,4 @@
-import { Peer } from "~/Peers.ts";
+import { Peer } from "../Peer.ts";
 
 export type SendHeaders = { [K in never]: never };
 export const SendHeaders: Peer.Message<SendHeaders> = {

@@ -1,5 +1,5 @@
 import { Validator } from "./Validator.ts";
-import { Peer } from "./Peers.ts";
+import { Peer } from "./Peer.ts";
 
 export declare namespace Bitcoin {
 	type MessageHandler<T> = {

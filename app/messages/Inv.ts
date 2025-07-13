@@ -1,4 +1,4 @@
-import { Peer } from "~/Peers.ts";
+import { Peer } from "../Peer.ts";
 import { BytesView } from "../BytesView.ts";
 
 const type_key_to_byte = {

@@ -1,5 +1,5 @@
 import { BlockHeader } from "../types/BlockHeader.ts";
-import { Peer } from "../Peers.ts";
+import { Peer } from "../Peer.ts";
 import { Tx } from "../types/Tx.ts";
 
 export type Block = {

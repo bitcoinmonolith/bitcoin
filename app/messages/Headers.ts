@@ -1,4 +1,4 @@
-import { Peer } from "~/Peers.ts";
+import { Peer } from "../Peer.ts";
 import { BlockHeader } from "../types/BlockHeader.ts";
 
 export type Headers = {

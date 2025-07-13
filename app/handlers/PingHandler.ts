@@ -2,7 +2,7 @@ import { randomBytes } from "@noble/hashes/utils";
 import { Bitcoin } from "../Bitcoin.ts";
 import { Ping } from "../messages/Ping.ts";
 import { Pong } from "../messages/Pong.ts";
-import { Peer } from "../Peers.ts";
+import { Peer } from "../Peer.ts";
 
 export const PingHandler: Bitcoin.MessageHandler<Ping> = {
 	message: Ping,

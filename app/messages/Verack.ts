@@ -1,4 +1,4 @@
-import { Peer } from "~/Peers.ts";
+import { Peer } from "../Peer.ts";
 
 export type Verack = { [K in never]: never };
 export const Verack: Peer.Message<Verack> = {
