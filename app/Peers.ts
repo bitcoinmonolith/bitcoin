@@ -12,7 +12,7 @@ export declare namespace Peer {
 		payload: Uint8Array;
 	};
 
-	export type MessageType<T> = { command: string } & DataType<T>;
+	export type Message<T> = { command: string } & DataType<T>;
 
 	export type Error = {
 		message: string;
@@ -124,16 +124,16 @@ export class Peer {
 		this.connection = null;
 	}
 
-	async send<T>(type: Peer.MessageType<T>, data: T): Promise<void> {
+	async send<T>(message: Peer.Message<T>, data: T): Promise<void> {
 		if (!this.connected || !this.connection) throw new Error("Peer is not connected");
 
-		const payload = type.serialize(data); // Uint8Array
+		const payload = message.serialize(data); // Uint8Array
 		const bytes = new Uint8Array(24 + payload.length);
 		const view = BytesView(bytes);
 
 		bytes.set(this.magic, 0);
 		// Write command as ascii, pad with zeros
-		const command_bytes = text_encoder.encode(type.command);
+		const command_bytes = text_encoder.encode(message.command);
 		bytes.set(command_bytes, 4);
 		// Zero fill up to 16 bytes
 		for (let i = 4 + command_bytes.length; i < 16; ++i) bytes[i] = 0;
@@ -141,7 +141,7 @@ export class Peer {
 		bytes.set(sha256(sha256(payload)).subarray(0, 4), 20);
 		bytes.set(payload, 24);
 
-		this.log(`📤 Sending: ${type.command} (${payload.length} bytes)`);
+		this.log(`📤 Sending: ${message.command} (${payload.length} bytes)`);
 
 		await this.connection.write(bytes);
 	}

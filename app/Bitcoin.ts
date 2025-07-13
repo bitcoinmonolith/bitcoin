@@ -1,29 +1,30 @@
 import { Validator } from "./Validator.ts";
 import { Peer } from "./Peers.ts";
 
-export type Message<T> = {
-	type: Peer.MessageType<T>;
-	handler(event: MessageEvent<T>): Promise<void>;
-};
+export declare namespace Bitcoin {
+	type MessageHandler<T> = {
+		message: Peer.Message<T>;
+		handle(event: MessageEvent<T>): Promise<void>;
+	};
 
-export type MessageEvent<T> = {
-	peer: Peer;
-	data: T;
-	ctx: Bitcoin;
-};
+	type MessageEvent<T> = {
+		peer: Peer;
+		data: T;
+		ctx: Bitcoin;
+	};
 
-// deno-lint-ignore no-explicit-any
-export type MessageExpector<T = any> = {
-	type: Peer.MessageType<T>;
-	resolvers: PromiseWithResolvers<T>;
-	matcher(data: T): boolean;
-};
+	type MessageExpector<T> = {
+		message: Peer.Message<T>;
+		resolvers: PromiseWithResolvers<T>;
+		matcher(data: T): boolean;
+	};
+}
 
 export class Bitcoin {
-	private readonly handlers: readonly Message<unknown>[];
-	private readonly handlers_map: ReadonlyMap<string, Message<unknown>>;
+	private readonly handlers: readonly Bitcoin.MessageHandler<unknown>[];
+	private readonly handlers_map: ReadonlyMap<string, Bitcoin.MessageHandler<unknown>>;
 	private readonly handlers_queue_by_peer: WeakMap<Peer, { busy: boolean; calls: { (): Promise<void> }[] }>;
-	private readonly expectors_by_type_by_peer: WeakMap<Peer, Map<string, Set<MessageExpector>>>;
+	private readonly expectors_by_type_by_peer: WeakMap<Peer, Map<string, Set<Bitcoin.MessageExpector<unknown>>>>;
 
 	public readonly peers = new Set<Peer>();
 	public readonly validator: Validator;
@@ -32,7 +33,7 @@ export class Bitcoin {
 	private readonly on_tick: (ctx: Bitcoin) => Promise<void>;
 
 	constructor(params: {
-		handlers: readonly Message<unknown>[];
+		handlers: readonly Bitcoin.MessageHandler<unknown>[];
 		validator: Validator;
 		on_start(ctx: Bitcoin): Promise<void>;
 		on_tick(ctx: Bitcoin): Promise<void>;
@@ -44,9 +45,9 @@ export class Bitcoin {
 		this.on_tick = params.on_tick;
 
 		this.peers = new Set<Peer>();
-		this.handlers_map = new Map(this.handlers.map((handler) => [handler.type.command, handler] as const));
+		this.handlers_map = new Map(this.handlers.map((handler) => [handler.message.command, handler] as const));
 		this.handlers_queue_by_peer = new WeakMap<Peer, { busy: boolean; calls: { (): Promise<void> }[] }>();
-		this.expectors_by_type_by_peer = new WeakMap<Peer, Map<string, Set<MessageExpector>>>();
+		this.expectors_by_type_by_peer = new WeakMap<Peer, Map<string, Set<Bitcoin.MessageExpector<unknown>>>>();
 	}
 
 	public async start() {
@@ -82,7 +83,7 @@ export class Bitcoin {
 				const expectors = expectorsByType?.get(message.command);
 				if (expectors?.size) {
 					for (const expector of expectors) {
-						const data = expector.type.deserialize(message.payload);
+						const data = expector.message.deserialize(message.payload);
 						if (!expector.matcher(data)) continue;
 						expectors.delete(expector);
 						peer.log(`✅ Matched expected ${message.command}`);
@@ -93,10 +94,10 @@ export class Bitcoin {
 
 				const handler = this.handlers_map.get(message.command);
 				if (handler) {
-					const data = handler.type.deserialize(message.payload);
+					const data = handler.message.deserialize(message.payload);
 					commandQueue.calls.push(() => {
 						peer.log(`📥 Handling ${message.command}`);
-						return handler.handler({ peer, data, ctx: this });
+						return handler.handle({ peer, data, ctx: this });
 					});
 					continue;
 				}
@@ -116,20 +117,20 @@ export class Bitcoin {
 		}
 	}
 
-	public expect<T>(peer: Peer, type: Peer.MessageType<T>, matcher: (data: T) => boolean) {
+	public expect<T>(peer: Peer, message: Peer.Message<T>, matcher: (data: T) => boolean) {
 		let expectorsByType = this.expectors_by_type_by_peer.get(peer);
 		if (!expectorsByType) {
 			this.expectors_by_type_by_peer.set(peer, expectorsByType = new Map());
 		}
-		let expectors = expectorsByType.get(type.command);
+		let expectors = expectorsByType.get(message.command);
 		if (!expectors) {
-			expectorsByType.set(type.command, expectors = new Set());
+			expectorsByType.set(message.command, expectors = new Set());
 		}
 
 		const resolvers = Promise.withResolvers<T>();
-		expectors.add({ resolvers, type, matcher });
+		expectors.add({ resolvers, message, matcher } satisfies Bitcoin.MessageExpector<T> as never);
 
-		peer.log(`🔭 Expecting: ${type.command}`);
+		peer.log(`🔭 Expecting: ${message.command}`);
 
 		return resolvers.promise;
 	}

@@ -1,10 +1,11 @@
 import { Peer } from "~/Peers.ts";
+import { BlockHeader } from "../types/BlockHeader.ts";
 
 export type Headers = {
-	headers: Uint8Array[]; // each header is 80 bytes
+	headers: BlockHeader[]; // each header is 80 bytes
 };
 
-export const Headers: Peer.MessageType<Headers> = {
+export const Headers: Peer.Message<Headers> = {
 	command: "headers",
 
 	serialize(data) {
@@ -21,11 +22,12 @@ export const Headers: Peer.MessageType<Headers> = {
 		bytes[offset++] = count;
 
 		for (const header of data.headers) {
-			if (header.byteLength !== 80) {
+			const headerBytes = BlockHeader.serialize(header);
+			if (headerBytes.byteLength !== 80) {
 				throw new Error("Invalid header size");
 			}
-			bytes.set(header, offset);
-			offset += 80;
+			bytes.set(headerBytes, offset);
+			offset += headerBytes.byteLength;
 
 			// tx count — always 0x00
 			bytes[offset++] = 0x00;
@@ -38,11 +40,11 @@ export const Headers: Peer.MessageType<Headers> = {
 		let offset = 0;
 
 		const count = bytes[offset++]!;
-		const headers: Uint8Array[] = [];
+		const headers: BlockHeader[] = [];
 
 		for (let i = 0; i < count; i++) {
-			const header = bytes.subarray(offset, offset + 80);
-			if (header.byteLength !== 80) {
+			const headerBytes = bytes.subarray(offset, offset + 80);
+			if (headerBytes.byteLength !== 80) {
 				throw new Error("Incomplete header data");
 			}
 			offset += 80;
@@ -52,7 +54,7 @@ export const Headers: Peer.MessageType<Headers> = {
 				throw new Error("Invalid tx count in headers message");
 			}
 
-			headers.push(header);
+			headers.push(BlockHeader.deserialize(headerBytes));
 		}
 
 		return { headers };

@@ -1,22 +1,17 @@
-import { Validator } from "./Validator.ts";
+import { hexToBytes } from "@noble/hashes/utils";
 import { Bitcoin } from "./Bitcoin.ts";
 import { Peer } from "./Peers.ts";
-import { SendHeaders } from "./messages/SendHeaders.ts";
-import {
-	GetHeadersHandler,
-	handshake,
-	InvHandler,
-	ping,
-	PingHandler,
-	SendCmpctHandler,
-	VersionHandler,
-} from "./message.ts";
-import { hexToBytes } from "@noble/hashes/utils";
-import { Version } from "./messages/Version.ts";
-import { GetData, MSG_BLOCK } from "./messages/GetData.ts";
+import { Validator } from "./Validator.ts";
+import { GetHeadersHandler } from "./handlers/GetHeadersHandler.ts";
+import { InvHandler } from "./handlers/InvHandler.ts";
+import { ping, PingHandler } from "./handlers/PingHandler.ts";
+import { SendCmpctHandler } from "./handlers/SendCmpctHandler.ts";
+import { handshake, VersionHandler } from "./handlers/VersionHandler.ts";
 import { Block } from "./messages/Block.ts";
-import { BlockHeader } from "./BlockHeader.ts";
-import { bytesEqualConstTime } from "./utils.ts";
+import { GetData } from "./messages/GetData.ts";
+import { SendHeaders } from "./messages/SendHeaders.ts";
+import { Version } from "./messages/Version.ts";
+import { bytes_equal } from "./utils/bytes.ts";
 
 const NETWORK_MAGIC = hexToBytes("f9beb4d9"); // Mainnet
 // const NETWORK_MAGIC = hexToBytes("0b110907"); // Testnet
@@ -85,7 +80,7 @@ const bitcoin = new Bitcoin({
 
 			await peer.send(GetData, {
 				inventory: [{
-					type: MSG_BLOCK,
+					type: "BLOCK",
 					hash: genesis,
 				}],
 			});
@@ -93,7 +88,7 @@ const bitcoin = new Bitcoin({
 				await ctx.expect(
 					peer,
 					Block,
-					(block) => bytesEqualConstTime(BlockHeader.from_bytes(block.header).hash.reverse(), genesis),
+					(block) => bytes_equal(block.header.hash.reverse(), genesis),
 				),
 			);
 		});

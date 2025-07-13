@@ -15,7 +15,7 @@ export type Version = {
 	relay: boolean;
 };
 
-export const Version: Peer.MessageType<Version> = {
+export const Version: Peer.Message<Version> = {
 	command: "version",
 	serialize(data) {
 		const userAgentBytes = new TextEncoder().encode(data.userAgent);

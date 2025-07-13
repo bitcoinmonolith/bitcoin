@@ -1,22 +1,22 @@
 {
-    "imports": {
-        "@noble/curves": "jsr:@noble/curves@^1.9.0",
-        "@noble/hashes": "jsr:@noble/hashes@^1.8.0",
-        "~/": "./app/"  
-    },
-    "compilerOptions": {
-        "types": ["deno.ns"],
-        "strict": true,
+	"imports": {
+		"@noble/curves": "jsr:@noble/curves@^1.9.0",
+		"@noble/hashes": "jsr:@noble/hashes@^1.8.0",
+		"~/": "./app/"
+	},
+	"compilerOptions": {
+		"types": ["deno.ns"],
+		"strict": true,
 		"noUncheckedIndexedAccess": true
-    },
-    "fmt": {
-        "lineWidth": 120,
-        "indentWidth": 4,
-        "useTabs": true
-    },
-    "lint": {
-        "rules": {
-            "exclude": ["no-namespace"]
-        }
-    }
+	},
+	"fmt": {
+		"lineWidth": 120,
+		"indentWidth": 4,
+		"useTabs": true
+	},
+	"lint": {
+		"rules": {
+			"exclude": ["no-namespace"]
+		}
+	}
 }

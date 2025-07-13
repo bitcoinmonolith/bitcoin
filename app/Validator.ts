@@ -1,8 +1,8 @@
-import { Block } from "./Block.ts";
 import { sha256 } from "@noble/hashes/sha2";
 import { bytesToHex } from "@noble/hashes/utils";
 import { BytesView } from "./BytesView.ts";
-import { BlockHeader } from "./BlockHeader.ts";
+import { BlockHeader } from "./types/BlockHeader.ts";
+import { Block } from "./messages/Block.ts";
 
 // Decode Bitcoin compact target ("bits") into bigint
 function bits_to_target(bits: number): bigint {

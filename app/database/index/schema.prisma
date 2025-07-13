@@ -8,9 +8,10 @@ datasource db {
     url      = "file:./prototype.sqlite"
 }
 
-model BlockHash {
-    shortestUniqueBlockHash Bytes  @id
-    blockHeight             BigInt
+model Block {
+    blockHash       Bytes  @id
+    blockHeight     BigInt @unique
+    merkleRootCache Bytes?
 }
 
 model TxHash {

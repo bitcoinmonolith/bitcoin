@@ -2,7 +2,7 @@ import { Peer } from "~/Peers.ts";
 import { BytesView } from "../BytesView.ts";
 
 export type Pong = { nonce: bigint };
-export const Pong: Peer.MessageType<Pong> = {
+export const Pong: Peer.Message<Pong> = {
 	command: "pong",
 	serialize(data) {
 		const bytes = new Uint8Array(8);

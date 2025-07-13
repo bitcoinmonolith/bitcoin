@@ -6,7 +6,7 @@ export type SendCmpct = {
 	version: bigint;
 };
 
-export const SendCmpct: Peer.MessageType<SendCmpct> = {
+export const SendCmpct: Peer.Message<SendCmpct> = {
 	command: "sendcmpct",
 	serialize(data) {
 		const bytes = new Uint8Array(9);

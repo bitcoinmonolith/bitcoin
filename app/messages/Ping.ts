@@ -2,7 +2,7 @@ import { Peer } from "~/Peers.ts";
 import { BytesView } from "../BytesView.ts";
 
 export type Ping = { nonce: bigint };
-export const Ping: Peer.MessageType<Ping> = {
+export const Ping: Peer.Message<Ping> = {
 	command: "ping",
 	serialize(data) {
 		const bytes = new Uint8Array(8);

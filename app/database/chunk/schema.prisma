@@ -10,13 +10,13 @@ datasource db {
 
 model Block {
     blockHeight BigInt @id
-    // hash is stored somewhere else.
+    // hash is stored globally, seperately.
 
-    version    Int
-    timestamp  Int
-    bits       Int
-    nonce      Int
-    merkleRoot Bytes
+    version   Int
+    timestamp Int
+    bits      Int
+    nonce     Int
+    // merkleRoot is stored seperately, calculated on demand and cached
 
     prevHeight BigInt? @unique
     prevBlock  Block?  @relation("blockchain", fields: [prevHeight], references: [blockHeight])

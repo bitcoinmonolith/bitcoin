@@ -7,7 +7,7 @@ export type GetHeaders = {
 	stop_hash: Uint8Array;
 };
 
-export const GetHeaders: Peer.MessageType<GetHeaders> = {
+export const GetHeaders: Peer.Message<GetHeaders> = {
 	command: "getheaders",
 
 	serialize(data) {
@@ -41,7 +41,6 @@ export const GetHeaders: Peer.MessageType<GetHeaders> = {
 
 		return bytes.subarray(0, offset);
 	},
-
 	deserialize(bytes) {
 		const view = BytesView(bytes);
 
