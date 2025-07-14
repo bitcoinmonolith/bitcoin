@@ -2,7 +2,12 @@
 	"imports": {
 		"@noble/curves": "jsr:@noble/curves@^1.9.0",
 		"@noble/hashes": "jsr:@noble/hashes@^1.8.0",
+		"@noble/secp256k1": "jsr:@noble/secp256k1@^2.3.0",
 		"~/": "./app/"
+	},
+	"tasks": {
+		"cache": "deno cache ./app/start.ts",
+		"start": "deno run -A ./app/start.ts"
 	},
 	"compilerOptions": {
 		"types": ["deno.ns"],
