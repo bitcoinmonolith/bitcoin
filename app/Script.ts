@@ -1,6 +1,22 @@
 import { sha256 } from "@noble/hashes/sha2";
 import { ripemd160 } from "@noble/hashes/legacy";
 import { verify } from "@noble/secp256k1";
+import { Tx } from "./types/Tx.ts";
+import { bytesConcat, bytesEqual } from "./utils/bytes.ts";
+import { IsUnion } from "./utils/types.ts";
+import { decodeVarInt, decodeVarIntNumber, encodeVarInt } from "./utils/encoding.ts";
+
+type ThisModule = typeof import("./Script.ts");
+type OP_CODES = Pick<ThisModule, keyof ThisModule & `OP_${string}`>;
+type OP_CODES_REVERSE = {
+	[K in keyof OP_CODES as OP_CODES[K]]: K;
+};
+
+// Ensure that OP_CODES has unique values
+type OP_CODES_DUPLICATES = {
+	[K in keyof OP_CODES_REVERSE]: IsUnion<OP_CODES_REVERSE[K]> extends true ? OP_CODES_REVERSE[K] : never;
+}[OP_CODES[keyof OP_CODES]];
+({} as OP_CODES_DUPLICATES) satisfies never;
 
 export const OP_0 = 0x00;
 export const OP_PUSHDATA1 = 0x4c;
@@ -87,8 +103,8 @@ export const OP_CHECKMULTISIG = 0xae;
 export const OP_CHECKMULTISIGVERIFY = 0xaf;
 
 export const OP_NOP1 = 0xb0;
-export const OP_CHECKLOCKTIMEVERIFY = 0xb1; // aka OP_NOP2
-export const OP_CHECKSEQUENCEVERIFY = 0xb2; // aka OP_NOP3
+export const OP_NOP2 = 0xb1;
+export const OP_NOP3 = 0xb2;
 export const OP_NOP4 = 0xb3;
 export const OP_NOP5 = 0xb4;
 export const OP_NOP6 = 0xb5;
@@ -96,6 +112,34 @@ export const OP_NOP7 = 0xb6;
 export const OP_NOP8 = 0xb7;
 export const OP_NOP9 = 0xb8;
 export const OP_NOP10 = 0xb9;
+
+function getSubscript(script: Uint8Array, sig: Uint8Array, lastCodeSep: number = 0): Uint8Array {
+	// Start from last CODESEPARATOR position
+	script = script.slice(lastCodeSep);
+
+	// Remove all instances of sig from script
+	const chunks: Uint8Array[] = [];
+	let i = 0;
+	while (i < script.length) {
+		const opcode = script[i];
+		if (opcode && opcode <= 0x4b) { // Push data operations
+			const len = opcode;
+			const data = script.slice(i + 1, i + 1 + len);
+			// Only include if not the signature we're checking
+			if (data.length !== sig.length || !data.every((b, j) => b === sig[j])) {
+				chunks.push(script.slice(i, i + 1 + len));
+			}
+			i += 1 + len;
+		} else if (opcode === OP_CODESEPARATOR) {
+			// Skip CODESEPARATOR ops
+			i++;
+		} else {
+			chunks.push(script.slice(i, i + 1));
+			i++;
+		}
+	}
+	return bytesConcat(...chunks);
+}
 
 function decodeIntLE(b: Uint8Array): number {
 	if (b.length === 0) return 0;
@@ -130,14 +174,17 @@ function encodeIntLE(n: number): Uint8Array {
 	return new Uint8Array(result);
 }
 
-export async function executeScript(script: Uint8Array): Promise<boolean> {
+export async function executeScript(
+	script: Uint8Array,
+	ctx: { tx: Tx; inputIndex: number; subscript?: Uint8Array; lastCodeSep?: number },
+): Promise<boolean> {
 	let pc: number = 0;
 	const stack: Uint8Array[] = [];
 	const altStack: Uint8Array[] = [];
 	const execStack: boolean[] = [];
 
 	while (pc < script.length) {
-		const opcode = script[pc++]!;
+		const opcode = script[pc++] as OP_CODES[keyof OP_CODES];
 
 		// Skip execution if inside a false branch
 		if (execStack.includes(false)) {
@@ -226,15 +273,15 @@ export async function executeScript(script: Uint8Array): Promise<boolean> {
 				const pubkey = stack.pop();
 				if (!pubkey || !sigWithHashType || sigWithHashType.length < 1) return false;
 
-				const sighashType = sigWithHashType[sigWithHashType.length - 1];
+				const sighashType = sigWithHashType[sigWithHashType.length - 1]!;
 				const sig = sigWithHashType.slice(0, -1); // strip sighash byte
 
-				// Compute message hash using context (you must implement this!)
-				const messageHash = computeSighash(tx, inputIndex, context.scriptCode, sighashType);
+				const subscript = ctx.subscript ??= getSubscript(script, sigWithHashType, ctx.lastCodeSep ?? 0);
+				const messageHash = await computeSighash(ctx.tx, ctx.inputIndex, subscript, sighashType);
 				if (!messageHash) return false;
 
 				try {
-					const valid = await verify(sig, messageHash, pubkey);
+					const valid = verify(sig, messageHash, pubkey);
 					stack.push(new Uint8Array([valid ? 1 : 0]));
 				} catch {
 					stack.push(new Uint8Array([0]));
@@ -243,14 +290,14 @@ export async function executeScript(script: Uint8Array): Promise<boolean> {
 			}
 
 			case OP_CHECKSIGVERIFY: {
-				if (!(await executeScript(Uint8Array.of(OP_CHECKSIG)))) return false;
+				if (!(await executeScript(Uint8Array.of(OP_CHECKSIG), ctx))) return false;
 				const result = stack.pop();
 				if (!result || !result.some((b) => b !== 0)) return false;
 				break;
 			}
 
 			case OP_CHECKMULTISIGVERIFY: {
-				if (!(await executeScript(Uint8Array.of(OP_CHECKMULTISIG)))) return false;
+				if (!(await executeScript(Uint8Array.of(OP_CHECKMULTISIG), ctx))) return false;
 				const result = stack.pop();
 				if (!result || !result.some((b) => b !== 0)) return false;
 				break;
@@ -411,13 +458,15 @@ export async function executeScript(script: Uint8Array): Promise<boolean> {
 				const numA = decodeIntLE(a);
 				const numB = decodeIntLE(b);
 
+				if (opcode === OP_NUMEQUALVERIFY) {
+					if (numA !== numB) return false;
+					break;
+				}
+
 				let result: number;
 				switch (opcode) {
 					case OP_NUMEQUAL:
 						result = numA === numB ? 1 : 0;
-						break;
-					case OP_NUMEQUALVERIFY:
-						if (numA !== numB) return false;
 						break;
 					case OP_NUMNOTEQUAL:
 						result = numA !== numB ? 1 : 0;
@@ -528,39 +577,58 @@ export async function executeScript(script: Uint8Array): Promise<boolean> {
 				const m = decodeIntLE(mRaw);
 				if (m < 0 || m > n || m > stack.length) return false;
 
-				const sigs: Uint8Array[] = [];
+				const sigsWithType: Uint8Array[] = [];
 				for (let i = 0; i < m; i++) {
 					const sig = stack.pop();
 					if (!sig) return false;
-					sigs.push(sig);
+					sigsWithType.push(sig);
 				}
 
 				// Remove dummy (required by consensus rules)
 				const dummy = stack.pop();
 				if (!dummy) return false;
 
-				// Placeholder: real messageHash from sighash logic
-				const messageHash = new Uint8Array(32); // Dummy hash for now
-
 				let sigIndex = 0;
 				let keyIndex = 0;
 				let success = true;
 
-				while (sigIndex < sigs.length && success && keyIndex < pubkeys.length) {
-					try {
-						const sig = sigs[sigIndex]!;
-						const pub = pubkeys[keyIndex]!;
-
-						if (await verify(sig, messageHash, pub)) {
-							sigIndex++;
-						}
-					} catch (_) {
-						// Ignore malformed sigs
+				while (sigIndex < sigsWithType.length && success && keyIndex < pubkeys.length) {
+					const sigWithType = sigsWithType[sigIndex]!;
+					if (sigWithType.length < 1) {
+						success = false;
+						break;
 					}
-					keyIndex++;
+
+					const sighashType = sigWithType[sigWithType.length - 1]!;
+					const sig = sigWithType.slice(0, -1);
+					const subscript = ctx.subscript ??= getSubscript(script, sigWithType, ctx.lastCodeSep ?? 0);
+					const messageHash = await computeSighash(ctx.tx, ctx.inputIndex, subscript, sighashType);
+
+					if (!messageHash) {
+						success = false;
+						break;
+					}
+
+					let validSig = false;
+					while (keyIndex < pubkeys.length && !validSig) {
+						try {
+							if (verify(sig, messageHash, pubkeys[keyIndex]!)) {
+								validSig = true;
+								sigIndex++;
+							}
+						} catch {
+							// Ignore malformed signatures
+						}
+						keyIndex++;
+					}
+
+					if (!validSig) {
+						success = false;
+						break;
+					}
 				}
 
-				success = sigIndex === sigs.length;
+				success = success && sigIndex === sigsWithType.length;
 				stack.push(new Uint8Array([success ? 1 : 0]));
 				break;
 			}
@@ -575,7 +643,7 @@ export async function executeScript(script: Uint8Array): Promise<boolean> {
 			}
 
 			case OP_CODESEPARATOR: {
-				// Used to split scripts for sighash — no-op in this interpreter
+				ctx.lastCodeSep = pc - 1;
 				break;
 			}
 
@@ -594,8 +662,75 @@ export async function executeScript(script: Uint8Array): Promise<boolean> {
 				break;
 			}
 
+			case OP_SIZE: {
+				const top = stack[stack.length - 1];
+				if (!top) return false;
+				stack.push(encodeIntLE(top.length));
+				break;
+			}
+
+			case OP_1NEGATE: {
+				stack.push(encodeIntLE(-1));
+				break;
+			}
+
+			case OP_SHA1: {
+				const top = stack.pop();
+				if (!top) return false;
+				// TODO: Implement SHA1 once needed
+				throw new Error("SHA1 not implemented");
+			}
+
+			case OP_SHA256: {
+				const top = stack.pop();
+				if (!top) return false;
+				stack.push(sha256(top));
+				break;
+			}
+
+			case OP_RIPEMD160: {
+				const top = stack.pop();
+				if (!top) return false;
+				stack.push(ripemd160(top));
+				break;
+			}
+
+			case OP_HASH256: {
+				const top = stack.pop();
+				if (!top) return false;
+				stack.push(sha256(sha256(top)));
+				break;
+			}
+
+			case OP_1:
+			case OP_2:
+			case OP_3:
+			case OP_4:
+			case OP_5:
+			case OP_6:
+			case OP_7:
+			case OP_8:
+			case OP_9:
+			case OP_10:
+			case OP_11:
+			case OP_12:
+			case OP_13:
+			case OP_14:
+			case OP_15:
+			case OP_16: {
+				const n = opcode - OP_1 + 1;
+				stack.push(encodeIntLE(n));
+				break;
+			}
+
+			case OP_RESERVED: {
+				return false; // Always fails
+			}
+
 			default:
-				throw new Error(`Unknown opcode: 0x${opcode.toString(16)}`);
+				// Ensure all opcodes are handled
+				({} as OP_CODES_REVERSE[typeof opcode]) satisfies never;
+				throw new Error(`Unknown opcode: 0x${(opcode as number).toString(16)}`);
 		}
 	}
 

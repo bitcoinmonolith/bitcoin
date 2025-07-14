@@ -1,10 +1,14 @@
 import { sha256 } from "@noble/hashes/sha2";
-import { Tx } from "../types/Tx.ts";
 import { bytesConcat } from "./bytes.ts";
-import { encodeVarInt } from "./encoding.ts";
+import { Tx } from "../types/Tx.ts";
+
+export function taggedHash(tag: string, msg: Uint8Array): Uint8Array {
+	const tagHash = sha256(new TextEncoder().encode(tag));
+	return sha256(bytesConcat(tagHash, tagHash, msg));
+}
 
 // Detect script type
-export function detectInputType(scriptPubKey: Uint8Array) {
+export function detectScriptPubKeyType(scriptPubKey: Uint8Array) {
 	// P2PKH: OP_DUP OP_HASH160 PUSH(20) <pubKeyHash> OP_EQUALVERIFY OP_CHECKSIG
 	if (
 		scriptPubKey.length === 25 &&
@@ -50,259 +54,231 @@ export function detectInputType(scriptPubKey: Uint8Array) {
 	return { type: "nonstandard", category: "nonstandard" } as const;
 }
 
-// Input/output serialization
-function serializeInput(input: Tx.Input, overrideScript?: Uint8Array): Uint8Array {
-	const script = overrideScript ?? input.scriptSig;
-
-	const voutBuf = new Uint8Array(4);
-	new DataView(voutBuf.buffer).setUint32(0, input.vout, true);
-
-	const seqBuf = new Uint8Array(4);
-	new DataView(seqBuf.buffer).setUint32(0, input.sequence, true);
-
-	return bytesConcat(
-		input.txid.slice().reverse(),
-		voutBuf,
-		encodeVarInt(script.length),
-		script,
-		seqBuf,
-	);
-}
-
-function serializeOutput(output: Tx.Output): Uint8Array {
-	const valBuf = new Uint8Array(8);
-	new DataView(valBuf.buffer).setBigUint64(0, output.value, true);
-
-	return bytesConcat(
-		valBuf,
-		encodeVarInt(output.scriptPubKey.length),
-		output.scriptPubKey,
-	);
-}
-
-export function computeSighash(
+export async function computeSighash(
 	tx: Tx,
 	inputIndex: number,
-	utxos: Tx.Output[],
+	subscript: Uint8Array,
 	sighashType: number,
-	scriptCodeOverride?: Uint8Array,
-): Uint8Array {
-	const utxo = utxos[tx.inputs[inputIndex]!.vout]!;
-	const scriptPubKey = utxo.scriptPubKey;
-	const value = utxo.value;
-	const { type, category } = detectInputType(scriptPubKey);
+): Promise<Uint8Array> {
+	const { category } = detectScriptPubKeyType(subscript);
 
-	if (category === "taproot") {
-		return computeSighashTaproot(tx, inputIndex, utxos, 0x00, sighashType);
+	switch (category) {
+		case "legacy":
+			return computeSighashLegacy(tx, inputIndex, subscript, sighashType);
+		case "segwit":
+			return await computeSighashSegwit(tx, inputIndex, subscript, sighashType);
+		case "taproot":
+			return await computeSighashTaproot(tx, inputIndex, subscript, sighashType);
+		default:
+			return computeSighashLegacy(tx, inputIndex, subscript, sighashType);
 	}
-
-	if (category === "segwit") {
-		// Provide scriptCode for P2WPKH
-		let scriptCode = scriptCodeOverride;
-		if (!scriptCode) {
-			if (type === "p2wpkh" && scriptPubKey.length === 22) {
-				const pubkeyHash = scriptPubKey.slice(2);
-				scriptCode = new Uint8Array([
-					0x76,
-					0xa9,
-					0x14,
-					...pubkeyHash,
-					0x88,
-					0xac,
-				]);
-			} else if (type === "p2wsh") {
-				if (!scriptCodeOverride) {
-					throw new Error("scriptCode required for P2WSH input");
-				}
-				scriptCode = scriptCodeOverride;
-			} else {
-				throw new Error(`Unsupported SegWit input type: ${type}`);
-			}
-		}
-
-		return computeSighashSegwit(tx, inputIndex, scriptCode, value, sighashType);
-	}
-
-	// Legacy or nonstandard (default to legacy sighash)
-	const scriptCode = scriptCodeOverride ?? scriptPubKey;
-	return computeSighashLegacy(tx, inputIndex, scriptCode, sighashType);
 }
 
-// Legacy sighash
 export function computeSighashLegacy(
 	tx: Tx,
 	inputIndex: number,
-	scriptCode: Uint8Array,
+	subscript: Uint8Array,
 	sighashType: number,
 ): Uint8Array {
-	const versionBuf = new Uint8Array(4);
-	new DataView(versionBuf.buffer).setUint32(0, tx.version, true);
+	// Handle different SIGHASH types
+	const txCopy = { ...tx };
 
-	const locktimeBuf = new Uint8Array(4);
-	new DataView(locktimeBuf.buffer).setUint32(0, tx.locktime, true);
+	const type = sighashType & 0x1f;
+	const anyoneCanPay = (sighashType & 0x80) === 0x80;
 
-	const typeBuf = new Uint8Array(4);
-	new DataView(typeBuf.buffer).setUint32(0, sighashType, true);
+	// Handle inputs based on sighash flags
+	if (anyoneCanPay) {
+		txCopy.inputs = [{ ...tx.inputs[inputIndex]!, scriptSig: subscript }];
+	} else {
+		txCopy.inputs = tx.inputs.map((input, i) => ({
+			...input,
+			scriptSig: i === inputIndex ? subscript : new Uint8Array(),
+		}));
+	}
 
-	const inputs = tx.inputs.map((input, i) =>
-		serializeInput(input, i === inputIndex ? scriptCode : new Uint8Array([]))
-	);
+	// Handle outputs based on sighash type
+	if (type === 0x02) { // SIGHASH_NONE
+		txCopy.outputs = [];
+		// Set sequence numbers to 0 except current input
+		txCopy.inputs = txCopy.inputs.map((input, i) => ({
+			...input,
+			sequence: i === inputIndex ? input.sequence : 0,
+		}));
+	} else if (type === 0x03) { // SIGHASH_SINGLE
+		if (inputIndex >= tx.outputs.length) {
+			throw new Error("SIGHASH_SINGLE index out of range");
+		}
+		txCopy.outputs = tx.outputs.slice(0, inputIndex + 1).map((output, i) =>
+			i === inputIndex ? output : { value: 0n, scriptPubKey: new Uint8Array() }
+		);
+		// Set sequence numbers to 0 except current input
+		txCopy.inputs = txCopy.inputs.map((input, i) => ({
+			...input,
+			sequence: i === inputIndex ? input.sequence : 0,
+		}));
+	}
 
-	const outputs = tx.outputs.map(serializeOutput);
-
-	const preimage = bytesConcat(
-		versionBuf,
-		encodeVarInt(tx.inputs.length),
-		...inputs,
-		encodeVarInt(tx.outputs.length),
-		...outputs,
-		locktimeBuf,
-		typeBuf,
-	);
-
-	return sha256(sha256(preimage));
+	const preimage = Tx.serialize([txCopy]);
+	const withType = bytesConcat(preimage, new Uint8Array([sighashType & 0xff]));
+	return sha256(sha256(withType));
 }
 
-// SegWit v0 sighash
-export function computeSighashSegwit(
+export async function computeSighashSegwit(
 	tx: Tx,
 	inputIndex: number,
-	scriptCode: Uint8Array,
-	value: bigint,
+	subscript: Uint8Array,
 	sighashType: number,
-): Uint8Array {
-	const versionBuf = new Uint8Array(4);
-	new DataView(versionBuf.buffer).setUint32(0, tx.version, true);
+): Promise<Uint8Array> {
+	const hashPrevouts = (sighashType & 0x1f) !== 0x01
+		? sha256(sha256(bytesConcat(
+			...tx.inputs.map((input) =>
+				bytesConcat(
+					input.txid,
+					new Uint8Array(new Uint32Array([input.vout]).buffer),
+				)
+			),
+		)))
+		: new Uint8Array(32); // Zero hash if SIGHASH_SINGLE or SIGHASH_NONE
 
-	const locktimeBuf = new Uint8Array(4);
-	new DataView(locktimeBuf.buffer).setUint32(0, tx.locktime, true);
+	const hashSequence = (sighashType & 0x1f) !== 0x01 && (sighashType & 0x80) !== 0x80
+		? sha256(sha256(bytesConcat(
+			...tx.inputs.map((input) => new Uint8Array(new Uint32Array([input.sequence]).buffer)),
+		)))
+		: new Uint8Array(32); // Zero hash if SIGHASH_SINGLE, SIGHASH_NONE, or ANYONECANPAY
 
-	const typeBuf = new Uint8Array(4);
-	new DataView(typeBuf.buffer).setUint32(0, sighashType, true);
-
-	const hashPrevouts = sha256(sha256(bytesConcat(
-		...tx.inputs.map((input) => {
-			const voutBuf = new Uint8Array(4);
-			new DataView(voutBuf.buffer).setUint32(0, input.vout, true);
-			return bytesConcat(input.txid.slice().reverse(), voutBuf);
-		}),
-	)));
-
-	const hashSequence = sha256(sha256(bytesConcat(
-		...tx.inputs.map((input) => {
-			const seqBuf = new Uint8Array(4);
-			new DataView(seqBuf.buffer).setUint32(0, input.sequence, true);
-			return seqBuf;
-		}),
-	)));
-
-	const hashOutputs = sha256(sha256(bytesConcat(
-		...tx.outputs.map(serializeOutput),
-	)));
+	const hashOutputs = (() => {
+		const type = sighashType & 0x1f;
+		if (type === 0x02) { // SIGHASH_NONE
+			return new Uint8Array(32);
+		}
+		if (type === 0x03 && inputIndex < tx.outputs.length) { // SIGHASH_SINGLE
+			const output = tx.outputs[inputIndex]!;
+			return sha256(sha256(bytesConcat(
+				new Uint8Array(new BigUint64Array([output.value]).buffer),
+				new Uint8Array([output.scriptPubKey.length]),
+				output.scriptPubKey,
+			)));
+		}
+		return sha256(sha256(bytesConcat(
+			...tx.outputs.map((output) =>
+				bytesConcat(
+					new Uint8Array(new BigUint64Array([output.value]).buffer),
+					new Uint8Array([output.scriptPubKey.length]),
+					output.scriptPubKey,
+				)
+			),
+		)));
+	})();
 
 	const input = tx.inputs[inputIndex]!;
-	const voutBuf = new Uint8Array(4);
-	new DataView(voutBuf.buffer).setUint32(0, input.vout, true);
-
-	const valBuf = new Uint8Array(8);
-	new DataView(valBuf.buffer).setBigUint64(0, value, true);
-
-	const seqBuf = new Uint8Array(4);
-	new DataView(seqBuf.buffer).setUint32(0, input.sequence, true);
+	const prevOutput = await input.prevOutput;
 
 	const preimage = bytesConcat(
-		versionBuf,
+		new Uint8Array(new Int32Array([tx.version]).buffer),
 		hashPrevouts,
 		hashSequence,
-		input.txid.slice().reverse(),
-		voutBuf,
-		encodeVarInt(scriptCode.length),
-		scriptCode,
-		valBuf,
-		seqBuf,
+		input.txid,
+		new Uint8Array(new Uint32Array([input.vout]).buffer),
+		new Uint8Array([subscript.length]),
+		subscript,
+		new Uint8Array(new BigUint64Array([prevOutput.value]).buffer), // Use actual amount
+		new Uint8Array(new Uint32Array([input.sequence]).buffer),
 		hashOutputs,
-		locktimeBuf,
-		typeBuf,
+		new Uint8Array(new Uint32Array([tx.locktime]).buffer),
+		new Uint8Array([sighashType & 0xff]),
 	);
 
 	return sha256(sha256(preimage));
 }
 
-// Tagged hash (BIP340-style)
-export function taggedHash(tag: string, msg: Uint8Array): Uint8Array {
-	const tagHash = sha256(new TextEncoder().encode(tag));
-	return sha256(bytesConcat(tagHash, tagHash, msg));
-}
-
-// Taproot sighash (key path)
-export function computeSighashTaproot(
+export async function computeSighashTaproot(
 	tx: Tx,
 	inputIndex: number,
-	utxos: Tx.Output[],
-	spendType: 0x00 | 0x01 = 0x00,
-	sighashType = 0x00,
-): Uint8Array {
-	const versionBuf = new Uint8Array(4);
-	new DataView(versionBuf.buffer).setUint32(0, tx.version, true);
-
-	const locktimeBuf = new Uint8Array(4);
-	new DataView(locktimeBuf.buffer).setUint32(0, tx.locktime, true);
-
-	const inputIndexBuf = new Uint8Array(4);
-	new DataView(inputIndexBuf.buffer).setUint32(0, inputIndex, true);
-
-	const spendTypeBuf = new Uint8Array([spendType]);
-	const sighashTypeBuf = new Uint8Array([sighashType]);
-
+	subscript: Uint8Array,
+	sighashType: number,
+): Promise<Uint8Array> {
+	// Calculate hash of all outpoints
 	const hashPrevouts = sha256(sha256(bytesConcat(
-		...tx.inputs.map((i) => {
-			const voutBuf = new Uint8Array(4);
-			new DataView(voutBuf.buffer).setUint32(0, i.vout, true);
-			return bytesConcat(i.txid.slice().reverse(), voutBuf);
-		}),
-	)));
-
-	const hashAmounts = sha256(sha256(bytesConcat(
-		...utxos.map((out) => {
-			const valBuf = new Uint8Array(8);
-			new DataView(valBuf.buffer).setBigUint64(0, out.value, true);
-			return valBuf;
-		}),
-	)));
-
-	const hashScriptPubKeys = sha256(sha256(bytesConcat(
-		...utxos.map((out) =>
+		...tx.inputs.map((input) =>
 			bytesConcat(
-				encodeVarInt(out.scriptPubKey.length),
-				out.scriptPubKey,
+				input.txid,
+				new Uint8Array(new Uint32Array([input.vout]).buffer),
 			)
 		),
 	)));
 
+	// Calculate hash of amounts
+	const amounts = await Promise.all(tx.inputs.map(async (input) => {
+		const prevOutput = await input.prevOutput;
+		return new Uint8Array(new BigUint64Array([prevOutput.value]).buffer);
+	}));
+	const hashAmounts = sha256(sha256(bytesConcat(...amounts)));
+
+	// Calculate hash of scriptPubKeys
+	const scriptPubKeys = await Promise.all(tx.inputs.map(async (input) => {
+		const prevOutput = await input.prevOutput;
+		return bytesConcat(
+			new Uint8Array([prevOutput.scriptPubKey.length]),
+			prevOutput.scriptPubKey,
+		);
+	}));
+	const hashScriptPubKeys = sha256(sha256(bytesConcat(...scriptPubKeys)));
+
+	// Calculate hash of sequences
 	const hashSequences = sha256(sha256(bytesConcat(
-		...tx.inputs.map((i) => {
-			const seqBuf = new Uint8Array(4);
-			new DataView(seqBuf.buffer).setUint32(0, i.sequence, true);
-			return seqBuf;
-		}),
+		...tx.inputs.map((input) => new Uint8Array(new Uint32Array([input.sequence]).buffer)),
 	)));
 
+	// Calculate hash of outputs
 	const hashOutputs = sha256(sha256(bytesConcat(
-		...tx.outputs.map(serializeOutput),
+		...tx.outputs.map((output) =>
+			bytesConcat(
+				new Uint8Array(new BigUint64Array([output.value]).buffer),
+				new Uint8Array([output.scriptPubKey.length]),
+				output.scriptPubKey,
+			)
+		),
 	)));
 
-	const preimage = bytesConcat(
-		spendTypeBuf,
-		versionBuf,
-		locktimeBuf,
-		hashPrevouts,
-		hashAmounts,
-		hashScriptPubKeys,
-		hashSequences,
-		hashOutputs,
-		inputIndexBuf,
-		sighashTypeBuf,
+	const version = new Uint8Array(new Int32Array([tx.version]).buffer);
+	const locktime = new Uint8Array(new Uint32Array([tx.locktime]).buffer);
+
+	const input = tx.inputs[inputIndex]!;
+	const outpoint = bytesConcat(
+		input.txid,
+		new Uint8Array(new Uint32Array([input.vout]).buffer),
 	);
 
-	return taggedHash("TapSighash", preimage);
+	const prevOutput = await input.prevOutput;
+
+	// Get annex if present (from witness)
+	let annex: Uint8Array = new Uint8Array([0]); // Default no annex
+	if (input.witness && input.witness.length > 0) {
+		const lastWitness = input.witness[input.witness.length - 1];
+		if (lastWitness && lastWitness[0] === 0x50) {
+			annex = bytesConcat(
+				new Uint8Array([1]),
+				sha256(lastWitness),
+			);
+		}
+	}
+
+	return taggedHash(
+		"TapSighash",
+		bytesConcat(
+			hashPrevouts,
+			hashAmounts,
+			hashScriptPubKeys,
+			hashSequences,
+			hashOutputs,
+			new Uint8Array([sighashType & 0xff]),
+			version,
+			locktime,
+			outpoint,
+			subscript,
+			new Uint8Array(new BigUint64Array([prevOutput.value]).buffer),
+			new Uint8Array(new Uint32Array([input.sequence]).buffer),
+			annex,
+		),
+	);
 }

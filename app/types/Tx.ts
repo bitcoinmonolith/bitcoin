@@ -16,6 +16,7 @@ export declare namespace Tx {
 		scriptSig: Uint8Array;
 		sequence: number;
 		witness?: Uint8Array[];
+		get prevOutput(): Promise<Tx.Output>; // Change back to Promise
 	};
 
 	type Output = {
@@ -133,7 +134,15 @@ export const Tx: DataType<Tx[]> = {
 				const sequence = new DataView(bytes.buffer, bytes.byteOffset + offset, 4).getUint32(0, true);
 				offset += 4;
 
-				inputs.push({ txid, vout, scriptSig, sequence });
+				inputs.push({
+					txid,
+					vout,
+					scriptSig,
+					sequence,
+					get prevOutput(): Promise<Tx.Output> {
+						throw new Error("Not implemented");
+					},
+				});
 			}
 
 			const [voutCount, voutOff] = decodeVarIntNumber(bytes, offset);
