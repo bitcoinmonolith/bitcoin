@@ -5,7 +5,7 @@ generator client {
 
 datasource db {
     provider = "sqlite"
-    url      = "file:./prototype.sqlite"
+    url      = "file:./generated/prototype.sqlite"
 }
 
 model Block {
@@ -41,8 +41,8 @@ model Tx {
 model TxOutput {
     index BigInt @id
 
-    value         BigInt
-    lockingScript Bytes  @map("scriptPubKey")
+    value        BigInt
+    scriptPubKey Bytes // TODO: store seperately so its not repeated
 
     tx      Tx     @relation(fields: [txIndex], references: [index])
     txIndex BigInt
@@ -57,52 +57,17 @@ model TxInput {
     tx      Tx     @relation(fields: [txIndex], references: [index])
     txIndex BigInt
 
-    output                TxOutput @relation("utxo", fields: [outputIndex], references: [index])
-    outputIndex           BigInt   @unique
-    outputUnlockingScript Bytes?   @map("scriptSig")
+    output      TxOutput @relation("utxo", fields: [outputIndex], references: [index])
+    outputIndex BigInt   @unique
+    scriptSig   Bytes // TODO: maybe later just put it in the witness, if you can somehow serialize it back to exact bytes
 
-    witnessP2WPKH  WitnessP2WPKH?
-    witnessP2WSH   WitnessP2WSH?
-    witnessP2TR    WitnessP2TR?
-    witnessP2SH    WitnessP2SH?
-    witnessP2PKH   WitnessP2PKH?
-    witnessUnknown Bytes?
+    TxWitness TxWitness[]
 }
 
-model WitnessP2WPKH {
-    inputIndex BigInt @id
-    pubkey     Bytes
-    sig        Bytes
+model TxWitness {
+    index        BigInt  @id
+    txInput      TxInput @relation(fields: [txInputIndex], references: [index])
+    txInputIndex BigInt
 
-    input TxInput @relation(fields: [inputIndex], references: [index])
-}
-
-model WitnessP2WSH {
-    inputIndex   BigInt @id
-    redeemScript Bytes
-
-    input TxInput @relation(fields: [inputIndex], references: [index])
-}
-
-model WitnessP2TR {
-    inputIndex   BigInt @id
-    controlBlock Bytes
-    tapscript    Bytes
-
-    input TxInput @relation(fields: [inputIndex], references: [index])
-}
-
-model WitnessP2SH {
-    inputIndex   BigInt @id
-    redeemScript Bytes
-
-    input TxInput @relation(fields: [inputIndex], references: [index])
-}
-
-model WitnessP2PKH {
-    inputIndex BigInt @id
-    pubkey     Bytes
-    sig        Bytes
-
-    input TxInput @relation(fields: [inputIndex], references: [index])
+    data Bytes
 }

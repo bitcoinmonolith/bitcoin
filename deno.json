@@ -7,10 +7,20 @@
 	},
 	"tasks": {
 		"cache": "deno cache ./app/start.ts",
-		"start": "deno run -A ./app/start.ts"
+		"start": "deno run -A ./app/start.ts",
+		"db:chunk:migrate": "deno run -A npm:prisma migrate dev --schema=./app/database/chunk/schema.prisma --name=''",
+		"db:chunk:generate": "deno run -A npm:prisma generate --schema=./app/database/chunk/schema.prisma",
+		"db:chunk:reset": "deno run -A npm:prisma migrate reset --force --skip-seed --schema=./app/database/chunk/schema.prisma",
+		"db:index:migrate": "deno run -A npm:prisma migrate dev --schema=./app/database/index/schema.prisma --name=''",
+		"db:index:generate": "deno run -A npm:prisma generate --schema=./app/database/index/schema.prisma",
+		"db:index:reset": "deno run -A npm:prisma migrate reset --force --skip-seed --schema=./app/database/index/schema.prisma",
+		"db:generate": "deno task db:chunk:generate && deno task db:index:generate",
+		"db:migrate": "deno task db:chunk:migrate && deno task db:index:migrate",
+		"db:reset": "deno task db:chunk:reset && deno task db:index:reset"
 	},
+	"unstable": ["raw-imports"],
 	"compilerOptions": {
-		"types": ["deno.ns"],
+		"lib": ["deno.ns", "es2024"],
 		"strict": true,
 		"noUncheckedIndexedAccess": true
 	},

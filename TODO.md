@@ -3,10 +3,10 @@
 - [x] Instead of hex string, use ArrayBuffer.
 - [x] refactor for this_casing instead of thisOne (keep the type like stuff as LikeThis)
 - [x] make messages actually parse the data
-- [ ] impliment bitcoin script and opcodes
-- [ ] Make sure code is simple and makes sense.
-- [ ] Decode, parse and verify txs inside blocks.
+- [x] impliment bitcoin script and opcodes
+- [x] Make sure code is simple and makes sense.
 - [ ] Make the database/compression as you imagined (you know)
+- [ ] Decode, parse and verify txs inside blocks.
 - [ ] Put the blocks inside the database, utxo and shit. you know the shit.
 - [ ] Write a basic logic that downloads the whole blockchain from your own Bitcoin Knots node from the local network.
 - [ ] Verify blockchain is smaller than 100GB, if not do more tweaks and hacks to make it smaller.
