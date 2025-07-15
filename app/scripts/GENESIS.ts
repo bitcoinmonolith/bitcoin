@@ -48,42 +48,46 @@ export const OP_0 = 0x00;
 OPCODE_TABLE_GENESIS[OP_0] = ({ stack }) => {
 	stack.push(new Uint8Array([])); // Empty array represents 0
 };
+
+function makePushData(opcode: number, lengthBytes: number) {
+	OPCODE_TABLE_GENESIS[opcode] = (ctx) => {
+		const headerSize = 1 + lengthBytes;
+
+		if (ctx.pc + headerSize > ctx.script.length) {
+			throw new Error(`OP_PUSHDATA${lengthBytes * 8}: Script out of bounds`);
+		}
+
+		let len = 0;
+		for (let i = 0; i < lengthBytes; i++) {
+			len |= ctx.script[ctx.pc + 1 + i]! << (8 * i);
+		}
+
+		if (ctx.pc + headerSize + len > ctx.script.length) {
+			throw new Error(`OP_PUSHDATA${lengthBytes * 8}: Script out of bounds`);
+		}
+
+		ctx.stack.push(ctx.script.slice(ctx.pc + headerSize, ctx.pc + headerSize + len));
+		ctx.pc = ctx.pc + headerSize + len - 1; // -1 because the interpreter will increment pc
+	};
+}
+
+// Register opcodes
+makePushData(0x4c, 1); // OP_PUSHDATA1
+makePushData(0x4d, 2); // OP_PUSHDATA2
+makePushData(0x4e, 4); // OP_PUSHDATA4
+
 export const OP_PUSHDATA1 = 0x4c;
-OPCODE_TABLE_GENESIS[OP_PUSHDATA1] = (ctx) => {
-	if (ctx.pc > ctx.script.length) throw new Error("OP_PUSHDATA1: Script out of bounds");
-	const len = ctx.script[ctx.pc + 1]!;
-	if (ctx.pc + 1 + len >= ctx.script.length) throw new Error("OP_PUSHDATA1: Script out of bounds");
-	ctx.stack.push(ctx.script.slice(ctx.pc + 2, ctx.pc + 2 + len));
-	ctx.pc = ctx.pc + 2 + len - 1; // -1 because interpreter will increment pc
-};
+makePushData(OP_PUSHDATA1, 1); // OP_PUSHDATA1
 
 export const OP_PUSHDATA2 = 0x4d;
-OPCODE_TABLE_GENESIS[OP_PUSHDATA2] = (ctx) => {
-	if (ctx.pc + 2 >= ctx.script.length) throw new Error("OP_PUSHDATA2: Script out of bounds");
-	const len = ctx.script[ctx.pc + 1]! | (ctx.script[ctx.pc + 2]! << 8);
-	if (ctx.pc + 2 + len >= ctx.script.length) throw new Error("OP_PUSHDATA2: Script out of bounds");
-	ctx.stack.push(ctx.script.slice(ctx.pc + 3, ctx.pc + 3 + len));
-	ctx.pc = ctx.pc + 3 + len - 1; // -1 because interpreter will increment pc
-};
+makePushData(OP_PUSHDATA2, 2); // OP_PUSHDATA2
 
 export const OP_PUSHDATA4 = 0x4e;
-OPCODE_TABLE_GENESIS[OP_PUSHDATA4] = (ctx) => {
-	if (ctx.pc + 4 >= ctx.script.length) throw new Error("OP_PUSHDATA4: Script out of bounds");
-	const len = ctx.script[ctx.pc + 1]! | (ctx.script[ctx.pc + 2]! << 8) |
-		(ctx.script[ctx.pc + 3]! << 16) | (ctx.script[ctx.pc + 4]! << 24);
-	if (ctx.pc + 4 + len >= ctx.script.length) throw new Error("OP_PUSHDATA4: Script out of bounds");
-	ctx.stack.push(ctx.script.slice(ctx.pc + 5, ctx.pc + 5 + len));
-	ctx.pc = ctx.pc + 5 + len - 1; // -1 because interpreter will increment pc
-};
+makePushData(OP_PUSHDATA4, 4); // OP_PUSHDATA4
 
 export const OP_1NEGATE = 0x4f;
 OPCODE_TABLE_GENESIS[OP_1NEGATE] = ({ stack }) => {
 	stack.push(new Uint8Array([0x81])); // -1 in minimal encoding
-};
-
-export const OP_RESERVED = 0x50;
-OPCODE_TABLE_GENESIS[OP_RESERVED] = () => {
-	throw new Error("OP_RESERVED: Disabled operation");
 };
 
 export const OP_1 = 0x51;
@@ -170,45 +174,58 @@ OPCODE_TABLE_GENESIS[OP_NOP] = () => {};
 
 export const OP_IF = 0x63;
 OPCODE_TABLE_GENESIS[OP_IF] = ({ stack, execStack }) => {
-	// Check if we are currently in a false execution context
-	const shouldExecute = execStack.length === 0 || execStack[execStack.length - 1];
+	const parentExec = execStack.length === 0 || execStack.at(-1);
 
-	if (shouldExecute) {
-		if (stack.length === 0) {
-			throw new Error("OP_IF: Empty stack");
-		}
-
-		const value = stack.pop()!;
-
-		// Interpret value as truthy if not 0 (empty buffer or 0 is false)
-		const isTruthy = value.length > 0 && !value.every((byte) => byte === 0);
-
-		execStack.push(isTruthy);
-	} else {
-		// Still need to push false to execStack to maintain block nesting
+	if (!parentExec) {
+		// Inside a false block, push false to maintain structure
 		execStack.push(false);
+		return;
 	}
+
+	if (stack.length === 0) {
+		throw new Error("OP_IF: Empty stack");
+	}
+
+	const value = stack.pop()!;
+	const isTruthy = value.length > 0 && !value.every((byte) => byte === 0);
+
+	execStack.push(isTruthy);
 };
 
 export const OP_NOTIF = 0x64;
 OPCODE_TABLE_GENESIS[OP_NOTIF] = ({ stack, execStack }) => {
-	const top = stack.pop();
-	if (!top) {
+	const parentExec = execStack.length === 0 || execStack.at(-1);
+
+	if (!parentExec) {
+		execStack.push(false); // skip branch, still need to track depth
+		return;
+	}
+
+	if (stack.length === 0) {
 		throw new Error("OP_NOTIF: Empty stack");
 	}
-	// In Genesis, any non-zero value or non-empty array was considered true
-	execStack.push(top.length === 0 || top[0] === 0);
+
+	const value = stack.pop()!;
+	const isFalsy = value.length === 0 || value.every((b) => b === 0);
+
+	execStack.push(isFalsy); // NOTIF means push true if falsy
 };
 
 export const OP_ELSE = 0x67;
 OPCODE_TABLE_GENESIS[OP_ELSE] = ({ execStack }) => {
-	if (execStack.length < 1) throw new Error("OP_ELSE: Execution stack underflow");
-	execStack[execStack.length - 1] = !execStack[execStack.length - 1];
+	if (execStack.length === 0) {
+		throw new Error("OP_ELSE: Execution stack underflow");
+	}
+
+	const top = execStack.pop()!;
+	execStack.push(!top);
 };
 
 export const OP_ENDIF = 0x68;
 OPCODE_TABLE_GENESIS[OP_ENDIF] = ({ execStack }) => {
-	if (execStack.length < 1) throw new Error("OP_ENDIF: Execution stack underflow");
+	if (execStack.length === 0) {
+		throw new Error("OP_ENDIF: Execution stack underflow");
+	}
 	execStack.pop();
 };
 
@@ -216,12 +233,13 @@ export const OP_VERIFY = 0x69;
 OPCODE_TABLE_GENESIS[OP_VERIFY] = ({ stack }) => {
 	const top = stack.pop();
 	if (!top) throw new Error("OP_VERIFY: Empty stack");
-	if (bytesEqual(top, new Uint8Array([]))) {
+
+	const isFalsy = top.length === 0 || top.every((byte) => byte === 0);
+
+	if (isFalsy) {
 		throw new Error("OP_VERIFY: False condition");
-	} else {
-		// If the top item is truthy, we just discard it
-		// In Genesis, any non-zero value or non-empty array was considered true
 	}
+	// If truthy, do nothing — just discard the value
 };
 
 export const OP_RETURN = 0x6a;
@@ -231,15 +249,19 @@ OPCODE_TABLE_GENESIS[OP_RETURN] = () => {
 
 export const OP_TOALTSTACK = 0x6b;
 OPCODE_TABLE_GENESIS[OP_TOALTSTACK] = ({ stack, altStack }) => {
-	const top = stack.pop();
-	if (!top) throw new Error("OP_TOALTSTACK: Empty stack");
-	altStack.push(top);
+	if (stack.length === 0) {
+		throw new Error("OP_TOALTSTACK: Empty stack");
+	}
+
+	altStack.push(stack.pop()!);
 };
 
 export const OP_FROMALTSTACK = 0x6c;
 OPCODE_TABLE_GENESIS[OP_FROMALTSTACK] = ({ stack, altStack }) => {
 	const top = altStack.pop();
-	if (!top) throw new Error("OP_FROMALTSTACK: Empty altstack");
+	if (!top) {
+		throw new Error("OP_FROMALTSTACK: Empty altstack");
+	}
 	stack.push(top);
 };
 
@@ -253,8 +275,8 @@ OPCODE_TABLE_GENESIS[OP_2DROP] = ({ stack }) => {
 export const OP_2DUP = 0x6e;
 OPCODE_TABLE_GENESIS[OP_2DUP] = ({ stack }) => {
 	if (stack.length < 2) throw new Error("OP_2DUP: Stack underflow");
-	const v1 = stack[stack.length - 2]!;
-	const v2 = stack[stack.length - 1]!;
+	const v1 = stack.at(-2)!;
+	const v2 = stack.at(-1)!;
 	stack.push(v1);
 	stack.push(v2);
 };
@@ -262,19 +284,19 @@ OPCODE_TABLE_GENESIS[OP_2DUP] = ({ stack }) => {
 export const OP_3DUP = 0x6f;
 OPCODE_TABLE_GENESIS[OP_3DUP] = ({ stack }) => {
 	if (stack.length < 3) throw new Error("OP_3DUP: Stack underflow");
-	const v1 = stack[stack.length - 3]!;
-	const v2 = stack[stack.length - 2]!;
-	const v3 = stack[stack.length - 1]!;
-	stack.push(v1);
-	stack.push(v2);
-	stack.push(v3);
+
+	const v1 = stack.at(-3)!;
+	const v2 = stack.at(-2)!;
+	const v3 = stack.at(-1)!;
+
+	stack.push(v1, v2, v3);
 };
 
 export const OP_2OVER = 0x70;
 OPCODE_TABLE_GENESIS[OP_2OVER] = ({ stack }) => {
 	if (stack.length < 4) throw new Error("OP_2OVER: Stack underflow");
-	const v1 = stack[stack.length - 4]!;
-	const v2 = stack[stack.length - 3]!;
+	const v1 = stack.at(-4)!;
+	const v2 = stack.at(-3)!;
 	stack.push(v1);
 	stack.push(v2);
 };
@@ -314,7 +336,7 @@ OPCODE_TABLE_GENESIS[OP_2SWAP] = ({ stack }) => {
 export const OP_IFDUP = 0x73;
 OPCODE_TABLE_GENESIS[OP_IFDUP] = ({ stack }) => {
 	if (stack.length < 1) throw new Error("OP_IFDUP: Empty stack");
-	const v = stack[stack.length - 1]!;
+	const v = stack.at(-1)!;
 	if (!bytesEqual(v, new Uint8Array([]))) {
 		stack.push(v);
 	}
@@ -334,7 +356,7 @@ OPCODE_TABLE_GENESIS[OP_DROP] = ({ stack }) => {
 export const OP_DUP = 0x76;
 OPCODE_TABLE_GENESIS[OP_DUP] = ({ stack }) => {
 	if (stack.length < 1) throw new Error("OP_DUP: Empty stack");
-	const top = stack[stack.length - 1]!;
+	const top = stack.at(-1)!;
 	stack.push(top);
 };
 
@@ -349,30 +371,30 @@ OPCODE_TABLE_GENESIS[OP_NIP] = ({ stack }) => {
 export const OP_OVER = 0x78;
 OPCODE_TABLE_GENESIS[OP_OVER] = ({ stack }) => {
 	if (stack.length < 2) throw new Error("OP_OVER: Stack underflow");
-	stack.push(stack[stack.length - 2]!);
+	stack.push(stack.at(-2)!);
 };
 
 export const OP_PICK = 0x79;
 OPCODE_TABLE_GENESIS[OP_PICK] = ({ stack }) => {
 	if (stack.length < 1) throw new Error("OP_PICK: Empty stack");
-	const n = stack.pop()![0]!;
+	const n = Number(decodeScriptNumber(stack.pop()!));
 	if (stack.length < n + 1) throw new Error("OP_PICK: Stack underflow");
-	stack.push(stack[stack.length - n - 1]!);
+	stack.push(stack.at(-n - 1)!);
 };
 
 export const OP_ROLL = 0x7a;
 OPCODE_TABLE_GENESIS[OP_ROLL] = ({ stack }) => {
 	if (stack.length < 1) throw new Error("OP_ROLL: Empty stack");
-	const n = stack.pop()![0]!;
+	const n = Number(decodeScriptNumber(stack.pop()!));
 	if (stack.length < n + 1) throw new Error("OP_ROLL: Stack underflow");
-	const v = stack.splice(stack.length - 1 - n, 1)[0]!;
+	const v = stack.splice(-1 - n, 1)[0]!;
 	stack.push(v);
 };
 
 export const OP_ROT = 0x7b;
 OPCODE_TABLE_GENESIS[OP_ROT] = ({ stack }) => {
 	if (stack.length < 3) throw new Error("OP_ROT: Stack underflow");
-	const v = stack.splice(stack.length - 3, 1)[0]!;
+	const v = stack.splice(-3, 1)[0]!;
 	stack.push(v);
 };
 
@@ -403,7 +425,7 @@ OPCODE_TABLE_GENESIS[OP_TUCK] = ({ stack }) => {
 export const OP_SIZE = 0x82;
 OPCODE_TABLE_GENESIS[OP_SIZE] = ({ stack }) => {
 	if (stack.length < 1) throw new Error("OP_SIZE: Empty stack");
-	const top = stack[stack.length - 1]!;
+	const top = stack.at(-1)!;
 	stack.push(new Uint8Array([top.length]));
 };
 
@@ -440,15 +462,15 @@ OPCODE_TABLE_GENESIS[OP_EQUALVERIFY] = ({ stack }) => {
 export const OP_1ADD = 0x8b;
 OPCODE_TABLE_GENESIS[OP_1ADD] = ({ stack }) => {
 	if (stack.length < 1) throw new Error("OP_1ADD: Empty stack");
-	const num = stack.pop()![0]!;
-	stack.push(new Uint8Array([num + 1]));
+	const num = decodeScriptNumber(stack.pop()!);
+	stack.push(encodeScriptNumber(num + 1n));
 };
 
 export const OP_1SUB = 0x8c;
 OPCODE_TABLE_GENESIS[OP_1SUB] = ({ stack }) => {
 	if (stack.length < 1) throw new Error("OP_1SUB: Empty stack");
-	const num = stack.pop()![0]!;
-	stack.push(new Uint8Array([num - 1]));
+	const num = decodeScriptNumber(stack.pop()!);
+	stack.push(encodeScriptNumber(num - 1n));
 };
 
 // export const OP_2MUL = 0x8d;      // broken
@@ -456,22 +478,22 @@ OPCODE_TABLE_GENESIS[OP_1SUB] = ({ stack }) => {
 export const OP_NEGATE = 0x8f;
 OPCODE_TABLE_GENESIS[OP_NEGATE] = ({ stack }) => {
 	if (stack.length < 1) throw new Error("OP_NEGATE: Empty stack");
-	const num = stack.pop()![0]!;
-	stack.push(new Uint8Array([-num]));
+	const num = decodeScriptNumber(stack.pop()!);
+	stack.push(encodeScriptNumber(-num));
 };
 
 export const OP_ABS = 0x90;
 OPCODE_TABLE_GENESIS[OP_ABS] = ({ stack }) => {
 	if (stack.length < 1) throw new Error("OP_ABS: Empty stack");
-	const num = stack.pop()![0]!;
-	stack.push(new Uint8Array([Math.abs(num)]));
+	const num = decodeScriptNumber(stack.pop()!);
+	stack.push(encodeScriptNumber(num < 0n ? -num : num));
 };
 
 export const OP_NOT = 0x91;
 OPCODE_TABLE_GENESIS[OP_NOT] = ({ stack }) => {
 	if (stack.length < 1) throw new Error("OP_NOT: Empty stack");
-	const num = stack.pop()![0];
-	stack.push(new Uint8Array([num === 0 ? 1 : 0]));
+	const num = decodeScriptNumber(stack.pop()!);
+	stack.push(new Uint8Array([num === 0n ? 1 : 0]));
 };
 
 export const OP_0NOTEQUAL = 0x92;
@@ -499,9 +521,9 @@ OPCODE_TABLE_GENESIS[OP_ADD] = ({ stack }) => {
 export const OP_SUB = 0x94;
 OPCODE_TABLE_GENESIS[OP_SUB] = ({ stack }) => {
 	if (stack.length < 2) throw new Error("OP_SUB: Stack underflow");
-	const b = stack.pop()![0]!;
-	const a = stack.pop()![0]!;
-	stack.push(new Uint8Array([a - b]));
+	const b = decodeScriptNumber(stack.pop()!);
+	const a = decodeScriptNumber(stack.pop()!);
+	stack.push(encodeScriptNumber(a - b));
 };
 
 // export const OP_MUL = 0x95;       // broken
@@ -512,24 +534,24 @@ OPCODE_TABLE_GENESIS[OP_SUB] = ({ stack }) => {
 export const OP_BOOLAND = 0x9a;
 OPCODE_TABLE_GENESIS[OP_BOOLAND] = ({ stack }) => {
 	if (stack.length < 2) throw new Error("OP_BOOLAND: Stack underflow");
-	const b = stack.pop()![0];
-	const a = stack.pop()![0];
-	stack.push(new Uint8Array([a !== 0 && b !== 0 ? 1 : 0]));
+	const b = decodeScriptNumber(stack.pop()!);
+	const a = decodeScriptNumber(stack.pop()!);
+	stack.push(new Uint8Array([a !== 0n && b !== 0n ? 1 : 0]));
 };
 
 export const OP_BOOLOR = 0x9b;
 OPCODE_TABLE_GENESIS[OP_BOOLOR] = ({ stack }) => {
 	if (stack.length < 2) throw new Error("OP_BOOLOR: Stack underflow");
-	const b = stack.pop()![0];
-	const a = stack.pop()![0];
-	stack.push(new Uint8Array([a !== 0 || b !== 0 ? 1 : 0]));
+	const b = decodeScriptNumber(stack.pop()!);
+	const a = decodeScriptNumber(stack.pop()!);
+	stack.push(new Uint8Array([a !== 0n || b !== 0n ? 1 : 0]));
 };
 
 export const OP_NUMEQUAL = 0x9c;
 OPCODE_TABLE_GENESIS[OP_NUMEQUAL] = ({ stack }) => {
 	if (stack.length < 2) throw new Error("OP_NUMEQUAL: Stack underflow");
-	const b = stack.pop()![0];
-	const a = stack.pop()![0];
+	const b = decodeScriptNumber(stack.pop()!);
+	const a = decodeScriptNumber(stack.pop()!);
 	stack.push(new Uint8Array([a === b ? 1 : 0]));
 };
 
@@ -547,65 +569,65 @@ OPCODE_TABLE_GENESIS[OP_NUMEQUALVERIFY] = ({ stack }) => {
 export const OP_NUMNOTEQUAL = 0x9e;
 OPCODE_TABLE_GENESIS[OP_NUMNOTEQUAL] = ({ stack }) => {
 	if (stack.length < 2) throw new Error("OP_NUMNOTEQUAL: Stack underflow");
-	const b = stack.pop()![0];
-	const a = stack.pop()![0];
+	const b = decodeScriptNumber(stack.pop()!);
+	const a = decodeScriptNumber(stack.pop()!);
 	stack.push(new Uint8Array([a !== b ? 1 : 0]));
 };
 
 export const OP_LESSTHAN = 0x9f;
 OPCODE_TABLE_GENESIS[OP_LESSTHAN] = ({ stack }) => {
 	if (stack.length < 2) throw new Error("OP_LESSTHAN: Stack underflow");
-	const b = stack.pop()![0]!;
-	const a = stack.pop()![0]!;
+	const b = decodeScriptNumber(stack.pop()!);
+	const a = decodeScriptNumber(stack.pop()!);
 	stack.push(new Uint8Array([a < b ? 1 : 0]));
 };
 
 export const OP_GREATERTHAN = 0xa0;
 OPCODE_TABLE_GENESIS[OP_GREATERTHAN] = ({ stack }) => {
 	if (stack.length < 2) throw new Error("OP_GREATERTHAN: Stack underflow");
-	const b = stack.pop()![0]!;
-	const a = stack.pop()![0]!;
+	const b = decodeScriptNumber(stack.pop()!);
+	const a = decodeScriptNumber(stack.pop()!);
 	stack.push(new Uint8Array([a > b ? 1 : 0]));
 };
 
 export const OP_LESSTHANOREQUAL = 0xa1;
 OPCODE_TABLE_GENESIS[OP_LESSTHANOREQUAL] = ({ stack }) => {
 	if (stack.length < 2) throw new Error("OP_LESSTHANOREQUAL: Stack underflow");
-	const b = stack.pop()![0]!;
-	const a = stack.pop()![0]!;
+	const b = decodeScriptNumber(stack.pop()!);
+	const a = decodeScriptNumber(stack.pop()!);
 	stack.push(new Uint8Array([a <= b ? 1 : 0]));
 };
 
 export const OP_GREATERTHANOREQUAL = 0xa2;
 OPCODE_TABLE_GENESIS[OP_GREATERTHANOREQUAL] = ({ stack }) => {
 	if (stack.length < 2) throw new Error("OP_GREATERTHANOREQUAL: Stack underflow");
-	const b = stack.pop()![0]!;
-	const a = stack.pop()![0]!;
+	const b = decodeScriptNumber(stack.pop()!);
+	const a = decodeScriptNumber(stack.pop()!);
 	stack.push(new Uint8Array([a >= b ? 1 : 0]));
 };
 
 export const OP_MIN = 0xa3;
 OPCODE_TABLE_GENESIS[OP_MIN] = ({ stack }) => {
 	if (stack.length < 2) throw new Error("OP_MIN: Stack underflow");
-	const b = stack.pop()![0]!;
-	const a = stack.pop()![0]!;
-	stack.push(new Uint8Array([Math.min(a, b)]));
+	const b = decodeScriptNumber(stack.pop()!);
+	const a = decodeScriptNumber(stack.pop()!);
+	stack.push(encodeScriptNumber(a < b ? a : b));
 };
 
 export const OP_MAX = 0xa4;
 OPCODE_TABLE_GENESIS[OP_MAX] = ({ stack }) => {
 	if (stack.length < 2) throw new Error("OP_MAX: Stack underflow");
-	const b = stack.pop()![0]!;
-	const a = stack.pop()![0]!;
-	stack.push(new Uint8Array([Math.max(a, b)]));
+	const b = decodeScriptNumber(stack.pop()!);
+	const a = decodeScriptNumber(stack.pop()!);
+	stack.push(encodeScriptNumber(a > b ? a : b));
 };
 
 export const OP_WITHIN = 0xa5;
 OPCODE_TABLE_GENESIS[OP_WITHIN] = ({ stack }) => {
 	if (stack.length < 3) throw new Error("OP_WITHIN: Stack underflow");
-	const max = stack.pop()![0]!;
-	const min = stack.pop()![0]!;
-	const x = stack.pop()![0]!;
+	const max = decodeScriptNumber(stack.pop()!);
+	const min = decodeScriptNumber(stack.pop()!);
+	const x = decodeScriptNumber(stack.pop()!);
 	stack.push(new Uint8Array([x >= min && x < max ? 1 : 0]));
 };
 
@@ -806,7 +828,7 @@ OPCODE_TABLE_GENESIS[OP_CHECKSIG] = ({ pc, stack, tx, inputIndex, script }) => {
 		return;
 	}
 
-	const sighashType = sig[sig.length - 1]!;
+	const sighashType = sig.at(-1)!;
 	const signature = sig.slice(0, -1);
 	const sigHash = sigHashTxDigest(tx, inputIndex, script.slice(0, pc), sighashType);
 	const result = secp256k1.verify(signature, sigHash, pubkey);
@@ -815,8 +837,8 @@ OPCODE_TABLE_GENESIS[OP_CHECKSIG] = ({ pc, stack, tx, inputIndex, script }) => {
 
 export const OP_CHECKSIGVERIFY = 0xad;
 OPCODE_TABLE_GENESIS[OP_CHECKSIGVERIFY] = (ctx) => {
-	OPCODE_TABLE_GENESIS[OP_CHECKSIG]!(ctx);
-	OPCODE_TABLE_GENESIS[OP_VERIFY]!(ctx);
+	ctx.table[OP_CHECKSIG]!(ctx);
+	ctx.table[OP_VERIFY]!(ctx);
 };
 
 export const OP_CHECKMULTISIG = 0xae;
@@ -861,7 +883,7 @@ OPCODE_TABLE_GENESIS[OP_CHECKMULTISIG] = ({ pc, stack, tx, inputIndex, script })
 			sigIndex++;
 			try {
 				// Get sighash type from last byte
-				const sighashType = sig[sig.length - 1]!;
+				const sighashType = sig.at(-1)!;
 				const signature = sig.slice(0, -1);
 
 				const sigHash = sigHashTxDigest(tx, inputIndex, script.slice(0, pc), sighashType);
@@ -885,8 +907,8 @@ OPCODE_TABLE_GENESIS[OP_CHECKMULTISIG] = ({ pc, stack, tx, inputIndex, script })
 
 export const OP_CHECKMULTISIGVERIFY = 0xaf;
 OPCODE_TABLE_GENESIS[OP_CHECKMULTISIGVERIFY] = (ctx) => {
-	OPCODE_TABLE_GENESIS[OP_CHECKMULTISIG]!(ctx);
-	OPCODE_TABLE_GENESIS[OP_VERIFY]!(ctx);
+	ctx.table[OP_CHECKMULTISIG]!(ctx);
+	ctx.table[OP_VERIFY]!(ctx);
 };
 
 // reserved / NOPs

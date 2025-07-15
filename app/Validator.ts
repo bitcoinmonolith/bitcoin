@@ -20,10 +20,10 @@ function hashHeader(header: BlockHeader): Uint8Array {
 	view.setUint32(offset, header.version, true);
 	offset += 4;
 
-	bytes.set(header.prevHash.reverse(), offset);
+	bytes.set(header.prevHash.toReversed(), offset);
 	offset += 32;
 
-	bytes.set(header.merkleRoot.reverse(), offset);
+	bytes.set(header.merkleRoot.toReversed(), offset);
 	offset += 32;
 
 	view.setUint32(offset, header.timestamp, true);

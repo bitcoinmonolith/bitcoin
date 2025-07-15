@@ -48,7 +48,7 @@ export const Tx: DataType<Tx[]> = {
 			txChunks.push(encodeVarInt(tx.inputs.length));
 			for (const input of tx.inputs) {
 				// Reverse txid
-				txChunks.push(input.txid.slice().reverse());
+				txChunks.push(input.txid.toReversed());
 
 				const voutBuf = new Uint8Array(4);
 				new DataView(voutBuf.buffer).setUint32(0, input.vout, true);

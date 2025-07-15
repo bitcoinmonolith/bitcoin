@@ -88,7 +88,7 @@ const bitcoin = new Bitcoin({
 				await ctx.expect(
 					peer,
 					Block,
-					(block) => bytesEqual(block.header.hash.reverse(), genesis),
+					(block) => bytesEqual(block.header.hash.toReversed(), genesis),
 				),
 			);
 		});
