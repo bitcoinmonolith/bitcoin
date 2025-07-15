@@ -9,9 +9,10 @@ export async function executeScript(
 ): Promise<boolean> {
 	const ctx: OPCODE_CONTEXT = {
 		pc: 0,
-		script: script,
-		tx: tx,
-		inputIndex: inputIndex,
+		table,
+		script,
+		tx,
+		inputIndex,
 		stack: [],
 		altStack: [],
 		execStack: [],
@@ -25,46 +26,81 @@ export async function executeScript(
 			const opcode = script[ctx.pc]!;
 			console.log("Executing opcode:", opcode, "at pc:", ctx.pc);
 
-			if (ctx.execStack.includes(false)) {
-				console.log("Skipping execution due to false in execStack");
-				continue;
-			}
+			// Check if we should execute this opcode based on execution stack
+			const shouldExecute = ctx.execStack.every((b) => b);
 
 			// Handle data push opcodes (0x01-0x4b)
 			if (opcode > 0x00 && opcode < 0x4c) {
-				// Check if we're at the end of the script or there's no room for data push
-				if (ctx.pc + 1 >= script.length || opcode >= script.length - ctx.pc - 1) {
-					// If at end or not enough bytes, treat as numeric value
-					console.log("Pushing numeric value:", opcode);
-					ctx.stack.push(new Uint8Array([opcode]));
+				if (shouldExecute) {
+					// Check if we're at the end of the script or there's no room for data push
+					if (ctx.pc + 1 >= script.length || opcode >= script.length - ctx.pc - 1) {
+						// If at end or not enough bytes, treat as numeric value
+						console.log("Pushing numeric value:", opcode);
+						ctx.stack.push(new Uint8Array([opcode]));
+					} else {
+						// Otherwise treat as data push
+						const data = script.slice(ctx.pc + 1, ctx.pc + 1 + opcode);
+						console.log("Pushing data:", [...data]);
+						ctx.stack.push(data);
+						ctx.pc += opcode;
+					}
 				} else {
-					// Otherwise treat as data push
-					const data = script.slice(ctx.pc + 1, ctx.pc + 1 + opcode);
-					console.log("Pushing data:", [...data]);
-					ctx.stack.push(data);
-					ctx.pc += opcode;
+					// Skip the data push but still advance pc correctly
+					if (ctx.pc + 1 < script.length && opcode < script.length - ctx.pc - 1) {
+						ctx.pc += opcode;
+					}
 				}
-			} else if (opcode === 0x00) {
-				console.log("Handling OP_0 explicitly");
-				// Handle OP_0 explicitly
-				ctx.stack.push(new Uint8Array([]));
 			} else {
-				console.log("Executing opcode:", opcode);
 				// Execute opcode from table
 				const handler = table[opcode];
 				if (!handler) return false;
 
-				const result = await Promise.resolve(handler(ctx));
-				if (!result) return false;
+				// Always execute control flow opcodes, conditionally execute others
+				if (shouldExecute || opcode === 0x63 || opcode === 0x67 || opcode === 0x68) { // IF, ELSE, ENDIF
+					console.log("Actually executing handler for opcode:", opcode);
+					await Promise.resolve(handler(ctx)).then(() => true);
+				} else {
+					console.log("Skipping execution of opcode:", opcode, "due to execStack");
+				}
 			}
 		}
 
-		// Script succeeded if stack has at least one item and top item is truthy
-		if (ctx.stack.length === 0) return false;
+		if (ctx.stack.length === 0) {
+			console.log("Script failed: empty stack");
+			return false;
+		}
+
 		const top = ctx.stack[ctx.stack.length - 1]!;
-		return top.length > 0 && top[0] !== 0;
+		console.log("Final stack top:", [...top]);
+		const result = isTruthy(top);
+		console.log("Final script result:", result);
+		return result;
 	} catch (error) {
 		console.error("Script execution error:", error);
 		return false;
 	}
+}
+
+function isTruthy(value: Uint8Array): boolean {
+	if (value.length === 0) return false;
+
+	for (let i = 0; i < value.length; i++) {
+		const byte = value[i];
+
+		// If non-zero:
+		if (byte !== 0) {
+			// Special case: single 0x80 or multi-byte ending in 0x80 = -0
+			if (byte === 0x80 && i === value.length - 1) {
+				// Make sure all preceding bytes are 0
+				for (let j = 0; j < value.length - 1; j++) {
+					if (value[j] !== 0) return true;
+				}
+				return false;
+			}
+			return true;
+		}
+	}
+
+	// All bytes are 0
+	return false;
 }

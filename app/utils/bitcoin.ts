@@ -1,284 +1,101 @@
 import { sha256 } from "@noble/hashes/sha2";
 import { bytesConcat } from "./bytes.ts";
-import { Tx } from "../types/Tx.ts";
 
 export function taggedHash(tag: string, msg: Uint8Array): Uint8Array {
 	const tagHash = sha256(new TextEncoder().encode(tag));
 	return sha256(bytesConcat(tagHash, tagHash, msg));
 }
 
-// Detect script type
-export function detectScriptPubKeyType(scriptPubKey: Uint8Array) {
-	// P2PKH: OP_DUP OP_HASH160 PUSH(20) <pubKeyHash> OP_EQUALVERIFY OP_CHECKSIG
-	if (
-		scriptPubKey.length === 25 &&
-		scriptPubKey[0] === 0x76 &&
-		scriptPubKey[1] === 0xa9 &&
-		scriptPubKey[2] === 0x14 &&
-		scriptPubKey[23] === 0x88 &&
-		scriptPubKey[24] === 0xac
-	) {
-		return { type: "p2pkh", category: "legacy" } as const;
+export function encodeScriptNumber(value: bigint): Uint8Array {
+	if (value === 0n) return new Uint8Array([]);
+
+	const neg = value < 0n;
+	let abs = neg ? -value : value;
+
+	const result: number[] = [];
+	while (abs > 0n) {
+		result.push(Number(abs & 0xffn));
+		abs >>= 8n;
 	}
 
-	// P2SH: OP_HASH160 PUSH(20) <scriptHash> OP_EQUAL
-	if (
-		scriptPubKey.length === 23 &&
-		scriptPubKey[0] === 0xa9 &&
-		scriptPubKey[1] === 0x14 &&
-		scriptPubKey[22] === 0x87
-	) {
-		return { type: "p2sh", category: "legacy" } as const;
+	// Add sign bit if needed
+	if (result[result.length - 1]! & 0x80) {
+		result.push(neg ? 0x80 : 0x00);
+	} else if (neg) {
+		result[result.length - 1]! |= 0x80;
 	}
 
-	// IsWitnessProgram()
-	if (scriptPubKey.length >= 4 && scriptPubKey.length <= 42) {
-		const versionByte = scriptPubKey[0]!;
-		const pushLength = scriptPubKey[1]!;
-
-		if (
-			(versionByte === 0x00 || (versionByte >= 0x51 && versionByte <= 0x60)) &&
-			pushLength === scriptPubKey.length - 2
-		) {
-			const version = versionByte === 0x00 ? 0 : versionByte - 0x50;
-
-			if (version === 0) {
-				if (pushLength === 20) return { type: "p2wpkh", category: "segwit" } as const;
-				if (pushLength === 32) return { type: "p2wsh", category: "segwit" } as const;
-			} else if (version === 1 && pushLength === 32) {
-				return { type: "p2tr", category: "taproot" } as const;
-			}
-		}
-	}
-
-	return { type: "nonstandard", category: "nonstandard" } as const;
+	return new Uint8Array(result);
 }
 
-export async function computeSighash(
-	tx: Tx,
-	inputIndex: number,
-	subscript: Uint8Array,
-	sighashType: number,
-): Promise<Uint8Array> {
-	const { category } = detectScriptPubKeyType(subscript);
+export function decodeScriptNumber(buf: Uint8Array): bigint {
+	if (buf.length === 0) return 0n;
 
-	switch (category) {
-		case "legacy":
-			return computeSighashLegacy(tx, inputIndex, subscript, sighashType);
-		case "segwit":
-			return await computeSighashSegwit(tx, inputIndex, subscript, sighashType);
-		case "taproot":
-			return await computeSighashTaproot(tx, inputIndex, subscript, sighashType);
-		default:
-			return computeSighashLegacy(tx, inputIndex, subscript, sighashType);
+	const lastByte = buf[buf.length - 1]!;
+	const signBit = (lastByte & 0x80) !== 0;
+
+	// Copy buffer and strip sign bit
+	const clean = new Uint8Array(buf);
+	clean[clean.length - 1] = lastByte & 0x7f;
+
+	let result = 0n;
+	for (let i = 0; i < clean.length; i++) {
+		result |= BigInt(clean[i]!) << (8n * BigInt(i));
 	}
+
+	return signBit ? -result : result;
 }
 
-export function computeSighashLegacy(
-	tx: Tx,
-	inputIndex: number,
-	subscript: Uint8Array,
-	sighashType: number,
-): Uint8Array {
-	// Handle different SIGHASH types
-	const txCopy = { ...tx };
-
-	const type = sighashType & 0x1f;
-	const anyoneCanPay = (sighashType & 0x80) === 0x80;
-
-	// Handle inputs based on sighash flags
-	if (anyoneCanPay) {
-		txCopy.inputs = [{ ...tx.inputs[inputIndex]!, scriptSig: subscript }];
-	} else {
-		txCopy.inputs = tx.inputs.map((input, i) => ({
-			...input,
-			scriptSig: i === inputIndex ? subscript : new Uint8Array(),
-		}));
-	}
-
-	// Handle outputs based on sighash type
-	if (type === 0x02) { // SIGHASH_NONE
-		txCopy.outputs = [];
-		// Set sequence numbers to 0 except current input
-		txCopy.inputs = txCopy.inputs.map((input, i) => ({
-			...input,
-			sequence: i === inputIndex ? input.sequence : 0,
-		}));
-	} else if (type === 0x03) { // SIGHASH_SINGLE
-		if (inputIndex >= tx.outputs.length) {
-			throw new Error("SIGHASH_SINGLE index out of range");
+export function encodeVarInt(n: number | bigint): Uint8Array {
+	if (typeof n === "number") {
+		if (n < 0xfd) {
+			return Uint8Array.of(n);
 		}
-		txCopy.outputs = tx.outputs.slice(0, inputIndex + 1).map((output, i) =>
-			i === inputIndex ? output : { value: 0n, scriptPubKey: new Uint8Array() }
-		);
-		// Set sequence numbers to 0 except current input
-		txCopy.inputs = txCopy.inputs.map((input, i) => ({
-			...input,
-			sequence: i === inputIndex ? input.sequence : 0,
-		}));
+		if (n <= 0xffff) {
+			const buf = new Uint8Array(3);
+			buf[0] = 0xfd;
+			buf[1] = n & 0xff;
+			buf[2] = n >> 8;
+			return buf;
+		}
+		if (n <= 0xffffffff) {
+			const buf = new Uint8Array(5);
+			buf[0] = 0xfe;
+			new DataView(buf.buffer).setUint32(1, n, true);
+			return buf;
+		}
+		n = BigInt(n); // Promote to bigint if larger
 	}
 
-	const preimage = Tx.serialize([txCopy]);
-	const withType = bytesConcat(preimage, new Uint8Array([sighashType & 0xff]));
-	return sha256(sha256(withType));
+	const buf = new Uint8Array(9);
+	buf[0] = 0xff;
+	new DataView(buf.buffer).setBigUint64(1, n, true);
+	return buf;
 }
 
-export async function computeSighashSegwit(
-	tx: Tx,
-	inputIndex: number,
-	subscript: Uint8Array,
-	sighashType: number,
-): Promise<Uint8Array> {
-	const hashPrevouts = (sighashType & 0x1f) !== 0x01
-		? sha256(sha256(bytesConcat(
-			...tx.inputs.map((input) =>
-				bytesConcat(
-					input.txid,
-					new Uint8Array(new Uint32Array([input.vout]).buffer),
-				)
-			),
-		)))
-		: new Uint8Array(32); // Zero hash if SIGHASH_SINGLE or SIGHASH_NONE
-
-	const hashSequence = (sighashType & 0x1f) !== 0x01 && (sighashType & 0x80) !== 0x80
-		? sha256(sha256(bytesConcat(
-			...tx.inputs.map((input) => new Uint8Array(new Uint32Array([input.sequence]).buffer)),
-		)))
-		: new Uint8Array(32); // Zero hash if SIGHASH_SINGLE, SIGHASH_NONE, or ANYONECANPAY
-
-	const hashOutputs = (() => {
-		const type = sighashType & 0x1f;
-		if (type === 0x02) { // SIGHASH_NONE
-			return new Uint8Array(32);
-		}
-		if (type === 0x03 && inputIndex < tx.outputs.length) { // SIGHASH_SINGLE
-			const output = tx.outputs[inputIndex]!;
-			return sha256(sha256(bytesConcat(
-				new Uint8Array(new BigUint64Array([output.value]).buffer),
-				new Uint8Array([output.scriptPubKey.length]),
-				output.scriptPubKey,
-			)));
-		}
-		return sha256(sha256(bytesConcat(
-			...tx.outputs.map((output) =>
-				bytesConcat(
-					new Uint8Array(new BigUint64Array([output.value]).buffer),
-					new Uint8Array([output.scriptPubKey.length]),
-					output.scriptPubKey,
-				)
-			),
-		)));
-	})();
-
-	const input = tx.inputs[inputIndex]!;
-	const prevOutput = await input.prevOutput;
-
-	const preimage = bytesConcat(
-		new Uint8Array(new Int32Array([tx.version]).buffer),
-		hashPrevouts,
-		hashSequence,
-		input.txid,
-		new Uint8Array(new Uint32Array([input.vout]).buffer),
-		new Uint8Array([subscript.length]),
-		subscript,
-		new Uint8Array(new BigUint64Array([prevOutput.value]).buffer), // Use actual amount
-		new Uint8Array(new Uint32Array([input.sequence]).buffer),
-		hashOutputs,
-		new Uint8Array(new Uint32Array([tx.locktime]).buffer),
-		new Uint8Array([sighashType & 0xff]),
-	);
-
-	return sha256(sha256(preimage));
+export function decodeVarInt(bytes: Uint8Array, offset: number): [value: number | bigint, offset: number] {
+	const first = bytes[offset]!;
+	if (first < 0xfd) {
+		return [first, offset + 1];
+	}
+	if (first === 0xfd) {
+		const value = bytes[offset + 1]! | (bytes[offset + 2]! << 8);
+		return [value, offset + 3];
+	}
+	if (first === 0xfe) {
+		const view = new DataView(bytes.buffer, bytes.byteOffset + offset + 1, 4);
+		const value = view.getUint32(0, true);
+		return [value, offset + 5];
+	}
+	if (first === 0xff) {
+		const view = new DataView(bytes.buffer, bytes.byteOffset + offset + 1, 8);
+		const value = view.getBigUint64(0, true);
+		return [value, offset + 9]; // Return as bigint
+	}
+	throw new Error("Invalid VarInt prefix");
 }
 
-export async function computeSighashTaproot(
-	tx: Tx,
-	inputIndex: number,
-	subscript: Uint8Array,
-	sighashType: number,
-): Promise<Uint8Array> {
-	// Calculate hash of all outpoints
-	const hashPrevouts = sha256(sha256(bytesConcat(
-		...tx.inputs.map((input) =>
-			bytesConcat(
-				input.txid,
-				new Uint8Array(new Uint32Array([input.vout]).buffer),
-			)
-		),
-	)));
-
-	// Calculate hash of amounts
-	const amounts = await Promise.all(tx.inputs.map(async (input) => {
-		const prevOutput = await input.prevOutput;
-		return new Uint8Array(new BigUint64Array([prevOutput.value]).buffer);
-	}));
-	const hashAmounts = sha256(sha256(bytesConcat(...amounts)));
-
-	// Calculate hash of scriptPubKeys
-	const scriptPubKeys = await Promise.all(tx.inputs.map(async (input) => {
-		const prevOutput = await input.prevOutput;
-		return bytesConcat(
-			new Uint8Array([prevOutput.scriptPubKey.length]),
-			prevOutput.scriptPubKey,
-		);
-	}));
-	const hashScriptPubKeys = sha256(sha256(bytesConcat(...scriptPubKeys)));
-
-	// Calculate hash of sequences
-	const hashSequences = sha256(sha256(bytesConcat(
-		...tx.inputs.map((input) => new Uint8Array(new Uint32Array([input.sequence]).buffer)),
-	)));
-
-	// Calculate hash of outputs
-	const hashOutputs = sha256(sha256(bytesConcat(
-		...tx.outputs.map((output) =>
-			bytesConcat(
-				new Uint8Array(new BigUint64Array([output.value]).buffer),
-				new Uint8Array([output.scriptPubKey.length]),
-				output.scriptPubKey,
-			)
-		),
-	)));
-
-	const version = new Uint8Array(new Int32Array([tx.version]).buffer);
-	const locktime = new Uint8Array(new Uint32Array([tx.locktime]).buffer);
-
-	const input = tx.inputs[inputIndex]!;
-	const outpoint = bytesConcat(
-		input.txid,
-		new Uint8Array(new Uint32Array([input.vout]).buffer),
-	);
-
-	const prevOutput = await input.prevOutput;
-
-	// Get annex if present (from witness)
-	let annex: Uint8Array = new Uint8Array([0]); // Default no annex
-	if (input.witness && input.witness.length > 0) {
-		const lastWitness = input.witness[input.witness.length - 1];
-		if (lastWitness && lastWitness[0] === 0x50) {
-			annex = bytesConcat(
-				new Uint8Array([1]),
-				sha256(lastWitness),
-			);
-		}
-	}
-
-	return taggedHash(
-		"TapSighash",
-		bytesConcat(
-			hashPrevouts,
-			hashAmounts,
-			hashScriptPubKeys,
-			hashSequences,
-			hashOutputs,
-			new Uint8Array([sighashType & 0xff]),
-			version,
-			locktime,
-			outpoint,
-			subscript,
-			new Uint8Array(new BigUint64Array([prevOutput.value]).buffer),
-			new Uint8Array(new Uint32Array([input.sequence]).buffer),
-			annex,
-		),
-	);
+export function decodeVarIntNumber(bytes: Uint8Array, offset: number): [value: number, offset: number] {
+	const [arg1, arg2] = decodeVarInt(bytes, offset);
+	return [Number(arg1), arg2];
 }

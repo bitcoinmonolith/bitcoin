@@ -12,10 +12,6 @@ import { GetData } from "./messages/GetData.ts";
 import { SendHeaders } from "./messages/SendHeaders.ts";
 import { Version } from "./messages/Version.ts";
 import { bytesEqual } from "./utils/bytes.ts";
-import { ripemd160 } from "@noble/hashes/legacy";
-import { sha256 } from "@noble/hashes/sha2";
-import { OP_CHECKSIG, OP_DUP, OP_EQUALVERIFY, OP_HASH160, OPCODE_TABLE_GENESIS } from "./scripts/GENESIS.ts";
-import { executeScript } from "./scripts/execute.ts";
 
 const NETWORK_MAGIC = hexToBytes("f9beb4d9"); // Mainnet
 /* const NETWORK_MAGIC = hexToBytes("0b110907"); // Testnet
@@ -95,26 +91,6 @@ const bitcoin = new Bitcoin({
 					(block) => bytesEqual(block.header.hash.reverse(), genesis),
 				),
 			);
-
-			// <sig> <pubkey> | <DUP> <HASH160> <pubKeyHash> <EQUALVERIFY> <CHECKSIG>
-			const sig = new Uint8Array([/* fake sig */ 0x30, 0x45]);
-			const pubkey = new Uint8Array([/* fake pubkey */ 0x02, 0x7d]);
-			const pubKeyHash = ripemd160(sha256(pubkey));
-
-			const script = new Uint8Array([
-				sig.length,
-				...sig,
-				pubkey.length,
-				...pubkey,
-				OP_DUP,
-				OP_HASH160,
-				pubKeyHash.length,
-				...pubKeyHash,
-				OP_EQUALVERIFY,
-				OP_CHECKSIG,
-			]);
-
-			console.log(executeScript(OPCODE_TABLE_GENESIS, script)); // should return true in stub mode
 		});
 	},
 	async onTick() {},

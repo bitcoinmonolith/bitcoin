@@ -1,7 +1,7 @@
 import { verify } from "@noble/secp256k1";
 import { bytesConcat, bytesEqual } from "../utils/bytes.ts";
 import { sha256 } from "@noble/hashes/sha2";
-import { OPCODE_TABLE_BIP_112 } from "./BIP_112.ts";
+import { BIP_112_PRE_SEGWIT_OPCODE_TABLE } from "./BIP_112_PRE_SEGWIT.ts";
 import { OPCODE_DUPLICATES, OPCODE_TABLE } from "./GENESIS.ts";
 import { Tx } from "../types/Tx.ts";
 
@@ -18,7 +18,7 @@ type OP_CODES = Pick<ThisModule, keyof ThisModule & `OP_${string}`>;
 // Ensure that OP_CODES has unique values
 ({} as OPCODE_DUPLICATES<OP_CODES>) satisfies never;
 
-export const OPCODE_TABLE_BIP_141_SEGWIT: OPCODE_TABLE = [...OPCODE_TABLE_BIP_112];
+export const BIP_141_SEGWIT_OPCODE_TABLE: OPCODE_TABLE = [...BIP_112_PRE_SEGWIT_OPCODE_TABLE];
 
 // BIP143 defines the new transaction digest algorithm for SegWit transactions
 async function sigHashTxDigest(tx: Tx, inputIndex: number, sighashType: number): Promise<Uint8Array> {
@@ -78,8 +78,10 @@ async function sigHashTxDigest(tx: Tx, inputIndex: number, sighashType: number):
 }
 
 export const OP_CHECKSIG = 0xac; // uses BIP143 signature hashing algorithm
-OPCODE_TABLE_BIP_141_SEGWIT[OP_CHECKSIG] = async ({ stack, tx, inputIndex }) => {
-	if (stack.length < 2) return false;
+BIP_141_SEGWIT_OPCODE_TABLE[OP_CHECKSIG] = async ({ stack, tx, inputIndex }) => {
+	if (stack.length < 2) {
+		throw new Error("OP_CHECKSIG: Stack underflow");
+	}
 	const pubkey = stack.pop()!;
 	const sig = stack.pop()!;
 
@@ -87,46 +89,56 @@ OPCODE_TABLE_BIP_141_SEGWIT[OP_CHECKSIG] = async ({ stack, tx, inputIndex }) => 
 	const sighashType = sig[sig.length - 1]!;
 	const signature = sig.slice(0, -1);
 
-	try {
-		const sigHash = await sigHashTxDigest(tx, inputIndex, sighashType);
-		const result = verify(signature, sigHash, pubkey);
-		stack.push(result ? new Uint8Array([1]) : new Uint8Array([]));
-		return true;
-	} catch {
-		stack.push(new Uint8Array([]));
-		return true;
-	}
+	const sigHash = await sigHashTxDigest(tx, inputIndex, sighashType);
+	const result = verify(signature, sigHash, pubkey);
+	stack.push(result ? new Uint8Array([1]) : new Uint8Array([]));
 };
 
 export const OP_CHECKSIGVERIFY = 0xad; // same, with VERIFY
-OPCODE_TABLE_BIP_141_SEGWIT[OP_CHECKSIGVERIFY] = (context) => {
-	if (!OPCODE_TABLE_BIP_141_SEGWIT[OP_CHECKSIG]!(context)) return false;
+BIP_141_SEGWIT_OPCODE_TABLE[OP_CHECKSIGVERIFY] = (context) => {
+	BIP_141_SEGWIT_OPCODE_TABLE[OP_CHECKSIG]!(context);
 	const top = context.stack.pop();
-	if (!top) return false;
-	return !bytesEqual(top, new Uint8Array([]));
+	if (!top) {
+		throw new Error("OP_CHECKSIGVERIFY: Stack underflow");
+	}
+	if (bytesEqual(top, new Uint8Array([]))) {
+		throw new Error("OP_CHECKSIGVERIFY: Signature verification failed");
+	}
 };
 
 export const OP_CHECKMULTISIG = 0xae; // uses BIP143 signature hashing algorithm
-OPCODE_TABLE_BIP_141_SEGWIT[OP_CHECKMULTISIG] = async ({ stack, tx, inputIndex }) => {
-	if (stack.length < 1) return false;
+BIP_141_SEGWIT_OPCODE_TABLE[OP_CHECKMULTISIG] = async ({ stack, tx, inputIndex }) => {
+	if (stack.length < 1) {
+		throw new Error("OP_CHECKMULTISIG: Stack underflow");
+	}
 	const n = stack.pop()!;
-	if (n[0]! < 0 || n[0]! > stack.length) return false;
+	if (n[0]! < 0 || n[0]! > stack.length) {
+		throw new Error("OP_CHECKMULTISIG: Invalid number of signatures");
+	}
 
 	const pubkeys = [];
 	for (let i = 0; i < n[0]!; i++) {
 		const pubkey = stack.pop();
-		if (!pubkey) return false;
+		if (!pubkey) {
+			throw new Error("OP_CHECKMULTISIG: Stack underflow while popping public key");
+		}
 		pubkeys.push(pubkey);
 	}
 
-	if (stack.length < 1) return false;
+	if (stack.length < 1) {
+		throw new Error("OP_CHECKMULTISIG: Stack underflow");
+	}
 	const m = stack.pop()!;
-	if (m[0]! < 0 || m[0]! > stack.length) return false;
+	if (m[0]! < 0 || m[0]! > stack.length) {
+		throw new Error("OP_CHECKMULTISIG: Invalid number of public keys");
+	}
 
 	const sigs = [];
 	for (let i = 0; i < m[0]!; i++) {
 		const sig = stack.pop();
-		if (!sig) return false;
+		if (!sig) {
+			throw new Error("OP_CHECKMULTISIG: Stack underflow while popping signature");
+		}
 		sigs.push(sig);
 	}
 
@@ -161,17 +173,26 @@ OPCODE_TABLE_BIP_141_SEGWIT[OP_CHECKMULTISIG] = async ({ stack, tx, inputIndex }
 	}
 
 	stack.push(success ? new Uint8Array([1]) : new Uint8Array([]));
-	return true;
 };
 
 export const OP_CHECKMULTISIGVERIFY = 0xaf; // same
-OPCODE_TABLE_BIP_141_SEGWIT[OP_CHECKMULTISIGVERIFY] = (context) => {
-	if (!OPCODE_TABLE_BIP_141_SEGWIT[OP_CHECKMULTISIG]!(context)) return false;
+BIP_141_SEGWIT_OPCODE_TABLE[OP_CHECKMULTISIGVERIFY] = (context) => {
+	BIP_141_SEGWIT_OPCODE_TABLE[OP_CHECKMULTISIG]!(context);
 	const top = context.stack.pop();
-	if (!top) return false;
-	return !bytesEqual(top, new Uint8Array([]));
+	if (!top) {
+		throw new Error("OP_CHECKMULTISIGVERIFY: Stack underflow");
+	}
+	if (bytesEqual(top, new Uint8Array([]))) {
+		throw new Error("OP_CHECKMULTISIGVERIFY: Signature verification failed");
+	} else if (top[0]! === 0) {
+		throw new Error("OP_CHECKMULTISIGVERIFY: No signatures were verified");
+	} else if (top[0]! < 0) {
+		throw new Error("OP_CHECKMULTISIGVERIFY: Negative signature count");
+	} else if (top[0]! > context.stack.length) {
+		throw new Error("OP_CHECKMULTISIGVERIFY: Too many signatures");
+	}
 };
 
 // OP_CODESEPARATOR becomes a NOP in SegWit v0
 export const OP_CODESEPARATOR = 0xab; // becomes NO-OP (ignored) in SegWit v0
-OPCODE_TABLE_BIP_141_SEGWIT[OP_CODESEPARATOR] = () => true;
+BIP_141_SEGWIT_OPCODE_TABLE[OP_CODESEPARATOR] = () => {};

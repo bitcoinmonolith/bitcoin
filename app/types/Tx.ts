@@ -1,6 +1,6 @@
 import { DataType } from "../DataType.ts";
+import { decodeVarIntNumber, encodeVarInt } from "../utils/bitcoin.ts";
 import { bytesConcat } from "../utils/bytes.ts";
-import { decodeVarIntNumber, encodeVarInt } from "../utils/encoding.ts";
 
 export type Tx = {
 	version: number;
