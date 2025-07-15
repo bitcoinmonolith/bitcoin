@@ -20,7 +20,7 @@
 	},
 	"unstable": ["raw-imports"],
 	"compilerOptions": {
-		"lib": ["deno.ns", "es2024"],
+		"lib": ["deno.ns", "deno.window", "es2024"],
 		"strict": true,
 		"noUncheckedIndexedAccess": true
 	},

@@ -8,8 +8,26 @@ export class BlockchainDB {
 	) {}
 
 	async putTx(tx: Tx): Promise<void> {
+		throw new Error("Not implemented");
 	}
 
-	async getTxByHash(txHash: string): Promise<Tx | null> {
+	async putBlock(block: Tx[]): Promise<void> {
+		throw new Error("Not implemented");
+	}
+
+	async getTxById(txId: string): Promise<Tx | null> {
+		throw new Error("Not implemented");
+	}
+
+	async getBlockByHeight(height: number): Promise<Tx[] | null> {
+		throw new Error("Not implemented");
+	}
+
+	async getBlockByHash(blockHash: string): Promise<Tx[] | null> {
+		throw new Error("Not implemented");
+	}
+
+	async getLatestBlockHeight(): Promise<number> {
+		throw new Error("Not implemented");
 	}
 }
