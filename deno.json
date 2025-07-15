@@ -6,7 +6,7 @@
 		"~/": "./app/"
 	},
 	"tasks": {
-		"cache": "deno cache ./app/start.ts",
+		"cache": "deno cache .",
 		"start": "deno run -A ./app/start.ts",
 		"db:chunk:migrate": "deno run -A npm:prisma migrate dev --schema=./app/database/chunk/schema.prisma --name=''",
 		"db:chunk:generate": "deno run -A npm:prisma generate --schema=./app/database/chunk/schema.prisma",
