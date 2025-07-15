@@ -12,9 +12,10 @@ import { GetData } from "./messages/GetData.ts";
 import { SendHeaders } from "./messages/SendHeaders.ts";
 import { Version } from "./messages/Version.ts";
 import { bytesEqual } from "./utils/bytes.ts";
-import { executeScript, OP_CHECKSIG, OP_DUP, OP_EQUALVERIFY, OP_HASH160 } from "./Script.ts";
 import { ripemd160 } from "@noble/hashes/legacy";
 import { sha256 } from "@noble/hashes/sha2";
+import { OP_CHECKSIG, OP_DUP, OP_EQUALVERIFY, OP_HASH160, OPCODE_TABLE_GENESIS } from "./scripts/GENESIS.ts";
+import { executeScript } from "./scripts/execute.ts";
 
 const NETWORK_MAGIC = hexToBytes("f9beb4d9"); // Mainnet
 /* const NETWORK_MAGIC = hexToBytes("0b110907"); // Testnet
@@ -113,7 +114,7 @@ const bitcoin = new Bitcoin({
 				OP_CHECKSIG,
 			]);
 
-			console.log(executeScript(script)); // should return true in stub mode
+			console.log(executeScript(OPCODE_TABLE_GENESIS, script)); // should return true in stub mode
 		});
 	},
 	async onTick() {},
