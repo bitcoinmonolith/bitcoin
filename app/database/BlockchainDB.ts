@@ -1,3 +1,5 @@
+// This is where the compression and caching magic happens!
+
 import { Tx } from "../types/Tx.ts";
 
 export class BlockchainDB {
