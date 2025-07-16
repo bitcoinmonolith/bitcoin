@@ -3,8 +3,8 @@ import { ripemd160, sha1 } from "@noble/hashes/legacy";
 import { sha256 } from "@noble/hashes/sha2";
 import { Tx } from "../types/Tx.ts";
 import { decodeScriptNumber, encodeScriptNumber, encodeVarInt } from "../utils/bitcoin.ts";
-import { bytesConcat, bytesEqual } from "../utils/bytes.ts";
 import { IsUnion } from "../utils/types.ts";
+import { concat, equals } from "jsr:@std/bytes";
 
 const SIGHASH_ALL = 0x01;
 const SIGHASH_NONE = 0x02;
@@ -337,7 +337,7 @@ export const OP_IFDUP = 0x73;
 OPCODE_TABLE_GENESIS[OP_IFDUP] = ({ stack }) => {
 	if (stack.length < 1) throw new Error("OP_IFDUP: Empty stack");
 	const v = stack.at(-1)!;
-	if (!bytesEqual(v, new Uint8Array([]))) {
+	if (!equals(v, new Uint8Array([]))) {
 		stack.push(v);
 	}
 };
@@ -451,7 +451,7 @@ OPCODE_TABLE_GENESIS[OP_EQUALVERIFY] = ({ stack }) => {
 	if (stack.length < 2) throw new Error("OP_EQUALVERIFY: Stack underflow");
 	const v1 = stack.pop()!;
 	const v2 = stack.pop()!;
-	if (bytesEqual(v1, v2)) {
+	if (equals(v1, v2)) {
 		stack.push(new Uint8Array([1])); // Push true if equal
 	} else {
 		throw new Error("OP_EQUALVERIFY: Values not equal");
@@ -751,7 +751,7 @@ function sigHashTxDigest(
 	}
 
 	// Legacy signing serialization and double SHA256
-	return sha256(sha256(bytesConcat(
+	return sha256(sha256(concat([
 		// Version (4 bytes, little-endian)
 		new Uint8Array((() => {
 			const buffer = new ArrayBuffer(4);
@@ -762,40 +762,36 @@ function sigHashTxDigest(
 		// Input count (VarInt)
 		encodeVarInt(txCopy.inputs.length),
 		// Inputs
-		...txCopy.inputs.map((input) =>
-			bytesConcat(
-				input.txid,
-				new Uint8Array((() => {
-					const buffer = new ArrayBuffer(4);
-					const view = new DataView(buffer);
-					view.setUint32(0, input.vout, true); // true for little-endian
-					return buffer;
-				})()),
-				encodeVarInt(input.scriptSig.length),
-				input.scriptSig,
-				new Uint8Array((() => {
-					const buffer = new ArrayBuffer(4);
-					const view = new DataView(buffer);
-					view.setUint32(0, input.sequence, true); // true for little-endian
-					return buffer;
-				})()),
-			)
-		),
+		...txCopy.inputs.flatMap((input) => [
+			input.txid,
+			new Uint8Array((() => {
+				const buffer = new ArrayBuffer(4);
+				const view = new DataView(buffer);
+				view.setUint32(0, input.vout, true); // true for little-endian
+				return buffer;
+			})()),
+			encodeVarInt(input.scriptSig.length),
+			input.scriptSig,
+			new Uint8Array((() => {
+				const buffer = new ArrayBuffer(4);
+				const view = new DataView(buffer);
+				view.setUint32(0, input.sequence, true); // true for little-endian
+				return buffer;
+			})()),
+		]),
 		// Output count (VarInt)
 		encodeVarInt(txCopy.outputs.length),
 		// Outputs
-		...txCopy.outputs.map((output) =>
-			bytesConcat(
-				new Uint8Array((() => {
-					const buffer = new ArrayBuffer(8);
-					const view = new DataView(buffer);
-					view.setBigUint64(0, output.value, true); // true for little-endian
-					return buffer;
-				})()),
-				encodeVarInt(output.scriptPubKey.length),
-				output.scriptPubKey,
-			)
-		),
+		...txCopy.outputs.flatMap((output) => [
+			new Uint8Array((() => {
+				const buffer = new ArrayBuffer(8);
+				const view = new DataView(buffer);
+				view.setBigUint64(0, output.value, true); // true for little-endian
+				return buffer;
+			})()),
+			encodeVarInt(output.scriptPubKey.length),
+			output.scriptPubKey,
+		]),
 		// Locktime (4 bytes, little-endian)
 		new Uint8Array((() => {
 			const buffer = new ArrayBuffer(4);
@@ -810,7 +806,7 @@ function sigHashTxDigest(
 			view.setUint32(0, sighashType, true); // true for little-endian
 			return buffer;
 		})()),
-	)));
+	])));
 }
 
 export const OP_CODESEPARATOR = 0xab;

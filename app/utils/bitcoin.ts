@@ -1,9 +1,9 @@
 import { sha256 } from "@noble/hashes/sha2";
-import { bytesConcat } from "./bytes.ts";
+import { concat } from "jsr:@std/bytes";
 
 export function taggedHash(tag: string, msg: Uint8Array): Uint8Array {
 	const tagHash = sha256(new TextEncoder().encode(tag));
-	return sha256(bytesConcat(tagHash, tagHash, msg));
+	return sha256(concat([tagHash, tagHash, msg]));
 }
 
 export function encodeScriptNumber(value: bigint): Uint8Array {

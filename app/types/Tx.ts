@@ -1,6 +1,6 @@
+import { concat } from "jsr:@std/bytes";
 import { DataType } from "../DataType.ts";
 import { decodeVarIntNumber, encodeVarInt } from "../utils/bitcoin.ts";
-import { bytesConcat } from "../utils/bytes.ts";
 
 export type Tx = {
 	version: number;
@@ -91,10 +91,10 @@ export const Tx: DataType<Tx[]> = {
 			txChunks.push(lockBuf);
 
 			// Combine txChunks
-			chunks.push(bytesConcat(...txChunks));
+			chunks.push(concat(txChunks));
 		}
 
-		return bytesConcat(...chunks);
+		return concat(chunks);
 	},
 	deserialize(bytes) {
 		let offset = 0;

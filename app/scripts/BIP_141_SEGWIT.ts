@@ -1,7 +1,7 @@
 import { sha256 } from "@noble/hashes/sha2";
 import { verify } from "@noble/secp256k1";
+import { concat } from "jsr:@std/bytes";
 import { Tx } from "../types/Tx.ts";
-import { bytesConcat } from "../utils/bytes.ts";
 import { BIP_112_PRE_SEGWIT_OPCODE_TABLE } from "./BIP_112_PRE_SEGWIT.ts";
 import { OPCODE_DUPLICATES, OPCODE_TABLE } from "./GENESIS.ts";
 
@@ -28,10 +28,11 @@ async function sigHashTxDigest(tx: Tx, inputIndex: number, sighashType: number):
 	if (anyoneCanPay) {
 		hashPrevouts = new Uint8Array(32).fill(0);
 	} else {
-		hashPrevouts = sha256(sha256(bytesConcat(
-			...tx.inputs.map((input) =>
-				bytesConcat(input.txid.toReversed(), new Uint8Array(new Uint32Array([input.vout]).buffer))
-			),
+		hashPrevouts = sha256(sha256(concat(
+			tx.inputs.flatMap((input) => [
+				input.txid.toReversed(),
+				new Uint8Array(new Uint32Array([input.vout]).buffer),
+			]),
 		)));
 	}
 
@@ -40,8 +41,8 @@ async function sigHashTxDigest(tx: Tx, inputIndex: number, sighashType: number):
 	if (anyoneCanPay || baseType === SIGHASH_SINGLE || baseType === SIGHASH_NONE) {
 		hashSequence = new Uint8Array(32).fill(0);
 	} else {
-		hashSequence = sha256(sha256(bytesConcat(
-			...tx.inputs.map((input) => new Uint8Array(new Uint32Array([input.sequence]).buffer)),
+		hashSequence = sha256(sha256(concat(
+			tx.inputs.map((input) => new Uint8Array(new Uint32Array([input.sequence]).buffer)),
 		)));
 	}
 
@@ -49,23 +50,21 @@ async function sigHashTxDigest(tx: Tx, inputIndex: number, sighashType: number):
 	let hashOutputs: Uint8Array;
 
 	if (baseType === SIGHASH_ALL) {
-		hashOutputs = sha256(sha256(bytesConcat(
-			...tx.outputs.map((output) =>
-				bytesConcat(
-					new Uint8Array(new BigUint64Array([output.value]).buffer),
-					output.scriptPubKey,
-				)
-			),
+		hashOutputs = sha256(sha256(concat(
+			tx.outputs.flatMap((output) => [
+				new Uint8Array(new BigUint64Array([output.value]).buffer),
+				output.scriptPubKey,
+			]),
 		)));
 	} else if (baseType === SIGHASH_SINGLE) {
 		if (inputIndex >= tx.outputs.length) {
 			throw new Error("SIGHASH_SINGLE but inputIndex >= outputs.length");
 		}
 		const output = tx.outputs[inputIndex]!;
-		hashOutputs = sha256(sha256(bytesConcat(
+		hashOutputs = sha256(sha256(concat([
 			new Uint8Array(new BigUint64Array([output.value]).buffer),
 			output.scriptPubKey,
-		)));
+		])));
 	} else if (baseType === SIGHASH_NONE) {
 		hashOutputs = new Uint8Array(32).fill(0);
 	} else {
@@ -76,7 +75,7 @@ async function sigHashTxDigest(tx: Tx, inputIndex: number, sighashType: number):
 	const input = tx.inputs[inputIndex]!;
 	const prevOutput = await input.prevOutput;
 
-	return sha256(bytesConcat(
+	return sha256(concat([
 		new Uint8Array(new Int32Array([tx.version]).buffer),
 		hashPrevouts,
 		hashSequence,
@@ -88,7 +87,7 @@ async function sigHashTxDigest(tx: Tx, inputIndex: number, sighashType: number):
 		hashOutputs,
 		new Uint8Array(new Uint32Array([tx.locktime]).buffer),
 		new Uint8Array([sighashType]),
-	));
+	]));
 }
 
 export const OP_CHECKSIG = 0xac;

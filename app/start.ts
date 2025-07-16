@@ -11,7 +11,7 @@ import { Block } from "./messages/Block.ts";
 import { GetData } from "./messages/GetData.ts";
 import { SendHeaders } from "./messages/SendHeaders.ts";
 import { Version } from "./messages/Version.ts";
-import { bytesEqual } from "./utils/bytes.ts";
+import { equals } from "jsr:@std/bytes";
 
 const NETWORK_MAGIC = hexToBytes("f9beb4d9"); // Mainnet
 /* const NETWORK_MAGIC = hexToBytes("0b110907"); // Testnet
@@ -88,7 +88,7 @@ const bitcoin = new Bitcoin({
 				await ctx.expect(
 					peer,
 					Block,
-					(block) => bytesEqual(block.header.hash.toReversed(), genesis),
+					(block) => equals(block.header.hash.toReversed(), genesis),
 				),
 			);
 		});
