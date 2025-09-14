@@ -1,7 +1,7 @@
 import { sha256 } from "@noble/hashes/sha2";
-import { CommandBuffer } from "./CommandBuffer.ts";
-import { DataType } from "./DataType.ts";
-import { BytesView } from "./BytesView.ts";
+import { CommandBuffer } from "~/lib/CommandBuffer.ts";
+import { BytesView } from "~/lib/BytesView.ts";
+import { Codec } from "@nomadshiba/struct-js";
 
 const textEncoder = new TextEncoder();
 const textDecoder = new TextDecoder("ascii");
@@ -12,7 +12,10 @@ export declare namespace Peer {
 		payload: Uint8Array;
 	};
 
-	export type Message<T> = { command: string } & DataType<T>;
+	export type Message<T> = {
+		command: string;
+		codec: Codec<T>;
+	};
 
 	export type Error = {
 		message: string;
@@ -94,7 +97,7 @@ export class Peer {
 							continue;
 						}
 
-						const indexView = new DataView(inbox.buffer, inbox.byteOffset);
+						const indexView = new BytesView(inbox);
 						const length = indexView.getUint32(16, true);
 						const totalLength = 24 + length;
 						if (inbox.length < totalLength) break;
@@ -127,9 +130,9 @@ export class Peer {
 	async send<T>(message: Peer.Message<T>, data: T): Promise<void> {
 		if (!this.connected || !this.connection) throw new Error("Peer is not connected");
 
-		const payload = message.serialize(data); // Uint8Array
+		const payload = message.codec.encode(data); // Uint8Array
 		const bytes = new Uint8Array(24 + payload.length);
-		const view = BytesView(bytes);
+		const view = new BytesView(bytes);
 
 		bytes.set(this.magic, 0);
 		// Write command as ascii, pad with zeros

@@ -1,56 +1,21 @@
-import { BlockHeader } from "../types/BlockHeader.ts";
-import { Peer } from "../Peer.ts";
-import { Tx } from "../types/Tx.ts";
+import { Codec } from "@nomadshiba/struct-js";
+import { Block } from "~/lib/primitives/Block.ts";
+import { PeerMessage } from "~/lib/p2p/PeerMessage.ts";
 
-export type Block = {
-	header: BlockHeader;
-	txs: Tx[];
+export type BlockMessage = {
+	block: Block;
 };
 
-export const Block: Peer.Message<Block> = {
-	command: "block",
-	serialize(data) {
-		const { header, txs } = data;
+export class BlockMessageCodec extends Codec<BlockMessage> {
+	public readonly stride = -1;
 
-		const headerBytes = BlockHeader.serialize(header);
-		if (headerBytes.byteLength !== 80) {
-			throw new Error("Invalid block header");
-		}
+	public encode(data: BlockMessage): Uint8Array {
+		return Block.encode(data.block);
+	}
 
-		const txCount = txs.length;
-		if (txCount >= 0xfd) {
-			throw new Error("Too many txs; varint > 0xfc not supported");
-		}
+	public decode(bytes: Uint8Array): BlockMessage {
+		return { block: Block.decode(bytes) };
+	}
+}
 
-		const txsBytes = Tx.serialize(txs);
-
-		const totalLength = 80 + 1 + txsBytes.length;
-		const bytes = new Uint8Array(totalLength);
-
-		let offset = 0;
-		bytes.set(headerBytes, offset);
-		offset += 80;
-
-		bytes[offset++] = txCount;
-
-		bytes.set(txsBytes, offset);
-
-		return bytes;
-	},
-
-	deserialize(bytes) {
-		let offset = 0;
-
-		const header = BlockHeader.deserialize(bytes.subarray(offset, offset + 80));
-		offset += 80;
-
-		const txCount = bytes[offset++]!;
-		const txs = Tx.deserialize(bytes.subarray(offset));
-
-		if (txs.length !== txCount) {
-			throw new Error(`Transaction count mismatch: expected ${txCount}, got ${txs.length}`);
-		}
-
-		return { header, txs };
-	},
-};
+export const BlockMessage = new PeerMessage("block", Block);

@@ -1,19 +1,20 @@
-import { Peer } from "../Peer.ts";
-import { BytesView } from "../BytesView.ts";
+import { Codec } from "@nomadshiba/struct-js";
+import { BytesView } from "~/lib/BytesView.ts";
+import { PeerMessage } from "~/lib/p2p/PeerMessage.ts";
 
-export type GetHeaders = {
+export type GetHeadersMessage = {
 	version: number;
 	hashes: Uint8Array[]; // block locator hashes
 	stopHash: Uint8Array;
 };
 
-export const GetHeaders: Peer.Message<GetHeaders> = {
-	command: "getheaders",
+export class GetHeadersMessageCodec extends Codec<GetHeadersMessage> {
+	public readonly stride = -1;
 
-	serialize(data) {
+	public encode(data: GetHeadersMessage): Uint8Array {
 		const count = data.hashes.length;
 		const bytes = new Uint8Array(4 + 1 + 32 * count + 32);
-		const view = BytesView(bytes);
+		const view = new BytesView(bytes);
 
 		let offset = 0;
 
@@ -40,9 +41,10 @@ export const GetHeaders: Peer.Message<GetHeaders> = {
 		offset += data.stopHash.byteLength;
 
 		return bytes.subarray(0, offset);
-	},
-	deserialize(bytes) {
-		const view = BytesView(bytes);
+	}
+
+	public decode(bytes: Uint8Array): GetHeadersMessage {
+		const view = new BytesView(bytes);
 
 		let offset = 0;
 
@@ -61,5 +63,7 @@ export const GetHeaders: Peer.Message<GetHeaders> = {
 		offset += 32;
 
 		return { version, hashes, stopHash };
-	},
-};
+	}
+}
+
+export const GetHeadersMessage = new PeerMessage("getheaders", new GetHeadersMessageCodec());

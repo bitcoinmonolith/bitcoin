@@ -1,8 +1,18 @@
-import { Peer } from "../Peer.ts";
+import { Codec } from "@nomadshiba/struct-js";
+import { PeerMessage } from "~/lib/p2p/PeerMessage.ts";
 
-export type Verack = { [K in never]: never };
-export const Verack: Peer.Message<Verack> = {
-	command: "verack",
-	serialize: () => new Uint8Array(0),
-	deserialize: () => ({}),
-};
+export type VerackMessage = null;
+
+export class VerackMessageCodec extends Codec<VerackMessage> {
+	public readonly stride = 0;
+
+	public encode(_: VerackMessage): Uint8Array {
+		return new Uint8Array(0);
+	}
+
+	public decode(_: Uint8Array): VerackMessage {
+		return null;
+	}
+}
+
+export const VerackMessage = new PeerMessage("verack", new VerackMessageCodec());

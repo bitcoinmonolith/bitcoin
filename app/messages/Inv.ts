@@ -1,5 +1,6 @@
-import { Peer } from "../Peer.ts";
-import { BytesView } from "../BytesView.ts";
+import { Codec } from "@nomadshiba/struct-js";
+import { BytesView } from "~/lib/BytesView.ts";
+import { PeerMessage } from "~/lib/p2p/PeerMessage.ts";
 
 const typeKeyToByte = {
 	TX: 1,
@@ -15,55 +16,50 @@ export type InvVector = {
 	hash: Uint8Array; // 32 bytes
 };
 
-export type Inv = {
+export type InvMessage = {
 	inventory: InvVector[];
 };
 
-export const Inv: Peer.Message<Inv> = {
-	command: "inv",
+export class InvMessageCodec extends Codec<InvMessage> {
+	public readonly stride = -1;
 
-	serialize(data) {
-		if (data.inventory.length >= 0xfd) {
-			throw new Error("Inv serialization: CompactSize > 0xfc not implemented");
-		}
-
+	public encode(data: InvMessage): Uint8Array {
 		const count = data.inventory.length;
-		const bytes = new Uint8Array(1 + count * 36);
-		const view = BytesView(bytes);
+		if (count >= 0xfd) throw new Error("Too many inventory items");
 
+		const bytes = new Uint8Array(1 + count * 36); // 1 varint + 36 per entry
 		let offset = 0;
 
-		view.setUint8(offset, count);
-		offset += 1;
+		bytes[offset++] = count;
 
-		for (const { type, hash } of data.inventory) {
-			view.setUint32(offset, typeKeyToByte[type], true);
-			offset += 4;
-			bytes.set(hash, offset);
-			offset += 32;
+		for (const item of data.inventory) {
+			const view = new BytesView(bytes, offset, 36);
+			view.setUint32(0, typeKeyToByte[item.type], true); // little-endian
+			bytes.set(item.hash, offset + 4);
+			offset += 36;
 		}
 
 		return bytes;
-	},
-	deserialize(bytes) {
-		const view = BytesView(bytes);
-		let offset = 0;
+	}
 
-		const count = view.getUint8(offset++);
-		const inventory: InvVector[] = [];
+	public decode(bytes: Uint8Array): InvMessage {
+		let offset = 0;
+		const count = bytes[offset++]!;
+		const inventory = [];
 
 		for (let i = 0; i < count; i++) {
-			const type = typeByteToKey.get(view.getUint32(offset, true));
+			const view = new BytesView(bytes, offset, 36);
+			const type = typeByteToKey.get(view.getUint32(0, true));
 			if (!type) {
 				throw new Error(`Unknown inventory type byte: ${view.getUint32(0, true)}`);
 			}
-			offset += 32 / 8;
-			const hash = bytes.subarray(offset, offset + 32);
-			offset += 32;
-
+			const hash = bytes.subarray(offset + 4, offset + 36);
 			inventory.push({ type, hash });
+			offset += 36;
 		}
 
 		return { inventory };
-	},
-};
+	}
+}
+
+export const InvMessage = new PeerMessage("inv", new InvMessageCodec());

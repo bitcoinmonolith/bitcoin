@@ -1,13 +1,16 @@
-import { Peer } from "../Peer.ts";
-import { BytesView } from "../BytesView.ts";
+import { Codec } from "@nomadshiba/struct-js";
+import { BytesView } from "~/lib/BytesView.ts";
+import { PeerMessage } from "~/lib/p2p/PeerMessage.ts";
 
-export type Version = {
+export type VersionMessage = {
 	version: number;
 	services: bigint;
 	timestamp: bigint;
 	recvServices: bigint;
+	recvIP: Uint8Array;
 	recvPort: number;
 	transServices: bigint;
+	transIP: Uint8Array;
 	transPort: number;
 	nonce: bigint;
 	userAgent: string;
@@ -15,14 +18,15 @@ export type Version = {
 	relay: boolean;
 };
 
-export const Version: Peer.Message<Version> = {
-	command: "version",
-	serialize(data) {
+export class VersionMessageCodec extends Codec<VersionMessage> {
+	public readonly stride = -1;
+
+	public encode(data: VersionMessage): Uint8Array {
 		const userAgentBytes = new TextEncoder().encode(data.userAgent);
 		const userAgentLength = userAgentBytes.length;
 
 		const bytes = new Uint8Array(150);
-		const view = BytesView(bytes);
+		const view = new BytesView(bytes);
 
 		let offset = 0;
 
@@ -64,10 +68,10 @@ export const Version: Peer.Message<Version> = {
 		bytes[offset++] = data.relay ? 1 : 0;
 
 		return bytes.subarray(0, offset);
-	},
+	}
 
-	deserialize(bytes) {
-		const view = BytesView(bytes);
+	public decode(bytes: Uint8Array): VersionMessage {
+		const view = new BytesView(bytes);
 		let offset = 0;
 
 		const version = view.getInt32(offset, true);
@@ -124,5 +128,7 @@ export const Version: Peer.Message<Version> = {
 			startHeight,
 			relay,
 		};
-	},
-};
+	}
+}
+
+export const VersionMessage = new PeerMessage("version", new VersionMessageCodec());
