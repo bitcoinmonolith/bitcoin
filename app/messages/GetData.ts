@@ -3,10 +3,11 @@ import { BytesView } from "~/lib/BytesView.ts";
 import { PeerMessage } from "~/lib/p2p/PeerMessage.ts";
 
 const typeKeyToByte = {
-	TX: 0x1,
-	BLOCK: 0x2,
-	FILTERED_BLOCK: 0x3,
 	CMPCT_BLOCK: 0x4,
+
+	SATOSHI_TX: 0x1,
+	SATOSHI_BLOCK: 0x2,
+	SATOSHI_FILTERED_BLOCK: 0x3,
 
 	WITNESS_TX: 0x40000001,
 	WITNESS_BLOCK: 0x40000002,
