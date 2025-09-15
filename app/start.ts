@@ -81,7 +81,7 @@ const bitcoin = new class extends Bitcoin {
 			relay: false,
 		};
 
-		const modernBlock = hexToBytes("00000000000000000001ee4aa122a84c1edba54383a46e61a1360f7651db78b5").reverse();
+		const modernBlock = hexToBytes("000000000000000000011cd4d27fc6ae94f6e436088fec3c873d6dc8d522a7e2").reverse();
 		const genesisBlock = hexToBytes("000000000019d6689c085ae165831e934ff763ae46a2a6c172b3f1b60a8ce26f").reverse();
 		const testBlock = modernBlock;
 		peer.connect().then(async () => {
@@ -97,7 +97,6 @@ const bitcoin = new class extends Bitcoin {
 				}],
 			});
 			const block = await this.expect(peer, BlockMessage, (block) => equals(block.header.hash, testBlock));
-			console.log("Block:", recursiveToHumanReadable(block.header));
 			const computedMerkleRoot = computeSatoshiMerkleRoot(
 				block.txs.map((tx) => sha256(sha256(Tx.encode({ ...tx, witness: false })))),
 			);
@@ -111,6 +110,7 @@ const bitcoin = new class extends Bitcoin {
 				const txId = bytesToHex(sha256(sha256(Tx.encode({ ...tx, witness: false }))).reverse());
 				console.log(`Tx[${txId}]:`, recursiveToHumanReadable(tx));
 			}
+			console.log("Block:", recursiveToHumanReadable(block.header));
 		});
 
 		await super.start();

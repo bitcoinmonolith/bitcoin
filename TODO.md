@@ -1,11 +1,19 @@
 ## Basics
 
-- [ ] Satoshi P2P communication protocol
-- [ ] Encode/Decode Blocks and Transactions
-- [ ] Satoshi's Merkle root computation
+- [x] Satoshi P2P communication protocol
+- [x] Encode/Decode Blocks and Transactions
+- [x] Satoshi's Merkle root computation
 - [ ] Basic Block and TX validation
   - [ ] Check TX inputs are unspent
   - [ ] Check if TX inputs value >= outputs value (remaining is fee)
+  - [ ] Check TX finality (nLockTime and nSequence)
+  - [ ] Check Block header POW
+  - [ ] Check Block timestamp
+  - [ ] Check Block size limits
+  - [ ] Check Block transactions are valid
+  - [ ] Check Block transactions are not duplicated
+  - [ ] Check Block Merkle root
+  - [ ] Check Block weight (SegWit)
 
 ## BIPs Implementation
 
