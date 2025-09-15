@@ -81,7 +81,7 @@ const bitcoin = new class extends Bitcoin {
 			relay: false,
 		};
 
-		const modernBlock = hexToBytes("00000000000000000000fa3235940f587566c6c02e73aa14b3b699b518527500").reverse();
+		const modernBlock = hexToBytes("00000000000000000001ee4aa122a84c1edba54383a46e61a1360f7651db78b5").reverse();
 		const genesisBlock = hexToBytes("000000000019d6689c085ae165831e934ff763ae46a2a6c172b3f1b60a8ce26f").reverse();
 		const testBlock = modernBlock;
 		peer.connect().then(async () => {
