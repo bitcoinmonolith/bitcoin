@@ -1,6 +1,6 @@
 import { Bitcoin } from "~/Bitcoin.ts";
-import { VerackMessage } from "~/messages/Verack.ts";
-import { VersionMessage } from "~/messages/Version.ts";
+import { VerackMessage } from "~/lib/p2p/messages/Verack.ts";
+import { VersionMessage } from "~/lib/p2p/messages/Version.ts";
 import { Peer } from "~/lib/p2p/Peer.ts";
 
 export const VersionHandler: Bitcoin.MessageHandler<VersionMessage> = {

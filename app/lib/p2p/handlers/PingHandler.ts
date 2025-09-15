@@ -1,7 +1,7 @@
 import { randomBytes } from "@noble/hashes/utils";
 import { Bitcoin } from "~/Bitcoin.ts";
-import { PingMessage } from "~/messages/Ping.ts";
-import { PongMessage } from "~/messages/Pong.ts";
+import { PingMessage } from "~/lib/p2p/messages/Ping.ts";
+import { PongMessage } from "~/lib/p2p/messages/Pong.ts";
 import { Peer } from "~/lib/p2p/Peer.ts";
 import { BytesView } from "~/lib/BytesView.ts";
 

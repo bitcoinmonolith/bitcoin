@@ -2,29 +2,30 @@ import { Codec } from "@nomadshiba/struct-js";
 import { concat } from "@std/bytes";
 import { CompactSize } from "~/lib/CompactSize.ts";
 import { BytesView } from "~/lib/BytesView.ts";
-import { SequenceLock } from "../weirdness/SequenceLock.ts";
-import { AbsoluteLock } from "../weirdness/AbsoluteLock.ts";
+import { SequenceLock } from "~/lib/weirdness/SequenceLock.ts";
+import { AbsoluteLock } from "~/lib/weirdness/AbsoluteLock.ts";
+import { sha256 } from "@noble/hashes/sha2";
 
-export type Tx = {
+export type Tx = Readonly<{
 	version: number;
-	vin: TxIn[];
-	vout: TxOut[];
+	vin: ReadonlyArray<TxIn>;
+	vout: ReadonlyArray<TxOut>;
 	absoluteLock: AbsoluteLock;
 	witness: boolean;
-};
+}>;
 
-export type TxIn = {
+export type TxIn = Readonly<{
 	txid: Uint8Array; // 32 bytes, LE on wire
 	vout: number;
 	scriptSig: Uint8Array;
 	sequenceLock: SequenceLock;
-	witness: Uint8Array[];
-};
+	witness: ReadonlyArray<Uint8Array>;
+}>;
 
-export type TxOut = {
+export type TxOut = Readonly<{
 	value: bigint; // 8 bytes, LE
 	scriptPubKey: Uint8Array;
-};
+}>;
 
 export class TxCodec extends Codec<Tx> {
 	public readonly stride = -1;
@@ -170,15 +171,14 @@ export class TxCodec extends Codec<Tx> {
 				const [nItems, nOff] = CompactSize.decode(bytes, offset);
 				offset = nOff;
 
-				const items: Uint8Array[] = [];
+				const witness = vin[i]!.witness as Uint8Array[];
 				for (let j = 0; j < nItems; j++) {
 					const [len, lenOff] = CompactSize.decode(bytes, offset);
 					offset = lenOff;
 					const item = bytes.slice(offset, offset + len);
 					offset += len;
-					items.push(item);
+					witness.push(item);
 				}
-				vin[i]!.witness = items;
 			}
 		}
 
@@ -186,17 +186,68 @@ export class TxCodec extends Codec<Tx> {
 		const locktime = new BytesView(bytes, offset, 4).getUint32(0, true);
 		offset += 4;
 
-		this.lastOffset = offset;
-		return {
+		const tx: Tx = {
 			version,
 			vin,
 			vout,
 			absoluteLock: AbsoluteLock.decode(locktime),
 			witness: hasWitness,
 		};
+
+		if (tx.witness) {
+			wBytesCache.set(tx, bytes.subarray(0, offset));
+		} else {
+			bytesCache.set(tx, bytes.subarray(0, offset));
+		}
+		this.lastOffset = offset;
+		return tx;
 	}
 
 	public lastOffset = 0;
 }
 
 export const Tx = new TxCodec();
+
+const bytesCache = new WeakMap<Tx, Uint8Array>();
+const txIdCache = new WeakMap<Tx, Uint8Array>();
+export function getTxId(tx: Tx): Uint8Array {
+	let txid = txIdCache.get(tx);
+	if (!txid) {
+		let bytes = bytesCache.get(tx);
+		if (!bytes) {
+			if (tx.witness) {
+				bytes = Tx.encode({ ...tx, witness: false });
+				bytesCache.set(tx, bytes);
+			} else {
+				bytes = Tx.encode(tx);
+				bytesCache.set(tx, bytes);
+				wBytesCache.set(tx, bytes);
+			}
+		}
+		txid = sha256(sha256(bytes));
+		txIdCache.set(tx, txid);
+	}
+	return txid;
+}
+
+const wBytesCache = new WeakMap<Tx, Uint8Array>();
+const wTxIdCache = new WeakMap<Tx, Uint8Array>();
+export function getWTxId(tx: Tx): Uint8Array {
+	let wtxid = wTxIdCache.get(tx);
+	if (!wtxid) {
+		let wbytes = wBytesCache.get(tx);
+		if (!wbytes) {
+			if (tx.witness) {
+				wbytes = Tx.encode(tx);
+				wBytesCache.set(tx, wbytes);
+			} else {
+				wbytes = Tx.encode(tx);
+				wBytesCache.set(tx, wbytes);
+				bytesCache.set(tx, wbytes);
+			}
+		}
+		wtxid = sha256(sha256(wbytes));
+		wTxIdCache.set(tx, wtxid);
+	}
+	return wtxid;
+}

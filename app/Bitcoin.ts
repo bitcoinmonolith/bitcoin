@@ -16,7 +16,7 @@ export declare namespace Bitcoin {
 	type MessageExpector<T> = {
 		message: Peer.Message<T>;
 		resolvers: PromiseWithResolvers<T>;
-		matcher(data: T): boolean;
+		matcher(data: T, raw: Uint8Array): boolean;
 	};
 }
 
@@ -71,7 +71,7 @@ export class Bitcoin {
 				if (expectors?.size) {
 					for (const expector of expectors) {
 						const data = expector.message.codec.decode(message.payload);
-						if (!expector.matcher(data)) continue;
+						if (!expector.matcher(data, message.payload)) continue;
 						expectors.delete(expector);
 						peer.log(`✅ Matched expected ${message.command}`);
 						expector.resolvers.resolve(data);
@@ -104,7 +104,7 @@ export class Bitcoin {
 		}
 	}
 
-	public expect<T>(peer: Peer, message: PeerMessage<T>, matcher: (data: T) => boolean) {
+	public expect<T>(peer: Peer, message: PeerMessage<T>, matcher: (data: T, raw: Uint8Array) => boolean) {
 		let expectorsByType = this.expectorsByTypeByPeer.get(peer);
 		if (!expectorsByType) {
 			this.expectorsByTypeByPeer.set(peer, expectorsByType = new Map());

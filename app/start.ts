@@ -1,18 +1,18 @@
-import { sha256 } from "@noble/hashes/sha2";
 import { bytesToHex, hexToBytes } from "@noble/hashes/utils";
 import { equals } from "@std/bytes";
 import { Bitcoin } from "~/Bitcoin.ts";
-import { GetHeadersHandler } from "~/handlers/GetHeadersHandler.ts";
-import { InvHandler } from "~/handlers/InvHandler.ts";
-import { ping, PingHandler } from "~/handlers/PingHandler.ts";
-import { SendCmpctHandler } from "~/handlers/SendCmpctHandler.ts";
-import { handshake, VersionHandler } from "~/handlers/VersionHandler.ts";
+import { GetHeadersHandler } from "~/lib/p2p/handlers/GetHeadersHandler.ts";
+import { InvHandler } from "~/lib/p2p/handlers/InvHandler.ts";
+import { ping, PingHandler } from "~/lib/p2p/handlers/PingHandler.ts";
+import { SendCmpctHandler } from "~/lib/p2p/handlers/SendCmpctHandler.ts";
+import { handshake, VersionHandler } from "~/lib/p2p/handlers/VersionHandler.ts";
 import { Peer } from "~/lib/p2p/Peer.ts";
-import { BlockMessage } from "~/messages/Block.ts";
-import { GetDataMessage } from "~/messages/GetData.ts";
-import { SendHeadersMessage } from "~/messages/SendHeaders.ts";
-import { VersionMessage } from "~/messages/Version.ts";
-import { Tx } from "./lib/primitives/Tx.ts";
+import { BlockMessage } from "~/lib/p2p/messages/Block.ts";
+import { GetDataMessage } from "~/lib/p2p/messages/GetData.ts";
+import { SendHeadersMessage } from "~/lib/p2p/messages/SendHeaders.ts";
+import { VersionMessage } from "~/lib/p2p/messages/Version.ts";
+import { getBlockHash } from "./lib/primitives/BlockHeader.ts";
+import { getTxId } from "./lib/primitives/Tx.ts";
 import { computeSatoshiMerkleRoot } from "./lib/satoshi/merkle.ts";
 
 const NETWORK_MAGIC = hexToBytes("f9beb4d9"); // Mainnet
@@ -82,7 +82,7 @@ const bitcoin = new class extends Bitcoin {
 		};
 
 		const modernBlock = hexToBytes("000000000000000000011cd4d27fc6ae94f6e436088fec3c873d6dc8d522a7e2").reverse();
-		const genesisBlock = hexToBytes("000000000019d6689c085ae165831e934ff763ae46a2a6c172b3f1b60a8ce26f").reverse();
+		// const genesisBlock = hexToBytes("000000000019d6689c085ae165831e934ff763ae46a2a6c172b3f1b60a8ce26f").reverse();
 		const testBlock = modernBlock;
 		peer.connect().then(async () => {
 			this.peers.add(peer);
@@ -96,18 +96,20 @@ const bitcoin = new class extends Bitcoin {
 					hash: testBlock,
 				}],
 			});
-			const block = await this.expect(peer, BlockMessage, (block) => equals(block.header.hash, testBlock));
-			const computedMerkleRoot = computeSatoshiMerkleRoot(
-				block.txs.map((tx) => sha256(sha256(Tx.encode({ ...tx, witness: false })))),
+			const block = await this.expect(
+				peer,
+				BlockMessage,
+				(block) => equals(getBlockHash(block.header), testBlock),
 			);
+
+			const computedMerkleRoot = computeSatoshiMerkleRoot(block.txs.map((tx) => getTxId(tx)));
 			console.log("Merkle Root:", bytesToHex(block.header.merkleRoot));
 			console.log("Computed:", bytesToHex(computedMerkleRoot));
 			if (!equals(block.header.merkleRoot, computedMerkleRoot)) {
 				throw new Error("Invalid merkle root");
 			}
 			for (const tx of block.txs) {
-				// const wtxid = bytesToHex(sha256(sha256(Tx.encode({ ...tx, witness: true }))).reverse());
-				const txId = bytesToHex(sha256(sha256(Tx.encode({ ...tx, witness: false }))).reverse());
+				const txId = getTxId(tx);
 				console.log(`Tx[${txId}]:`, recursiveToHumanReadable(tx));
 			}
 			console.log("Block:", recursiveToHumanReadable(block.header));

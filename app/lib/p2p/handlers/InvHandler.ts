@@ -1,6 +1,6 @@
 import { bytesToHex } from "@noble/hashes/utils";
 import { Bitcoin } from "~/Bitcoin.ts";
-import { InvMessage } from "~/messages/Inv.ts";
+import { InvMessage } from "~/lib/p2p/messages/Inv.ts";
 
 export const InvHandler: Bitcoin.MessageHandler<InvMessage> = {
 	message: InvMessage,

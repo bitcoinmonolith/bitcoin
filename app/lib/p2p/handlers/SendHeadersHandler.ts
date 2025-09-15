@@ -1,5 +1,5 @@
 import { Bitcoin } from "~/Bitcoin.ts";
-import { SendHeadersMessage } from "~/messages/SendHeaders.ts";
+import { SendHeadersMessage } from "~/lib/p2p/messages/SendHeaders.ts";
 
 export const SendHeadersHandler: Bitcoin.MessageHandler<SendHeadersMessage> = {
 	message: SendHeadersMessage,

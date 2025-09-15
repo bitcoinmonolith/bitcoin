@@ -5,10 +5,10 @@ import { CompactSize } from "~/lib/CompactSize.ts";
 import { bytesToHex, concatBytes } from "@noble/hashes/utils";
 import { equals } from "@std/bytes";
 
-export type Block = {
+export type Block = Readonly<{
 	header: BlockHeader;
 	txs: Tx[];
-};
+}>;
 
 export class BlockCodec extends Codec<Block> {
 	public readonly stride = -1;
