@@ -1,6 +1,6 @@
 import { sha256 } from "@noble/hashes/sha2";
 import { concatBytes } from "@noble/hashes/utils";
-import { equals } from "jsr:@std/bytes";
+import { equals } from "@std/bytes";
 
 export function computeSatoshiMerkleRoot(txids: Uint8Array[]): Uint8Array {
 	if (txids.length === 0) return new Uint8Array(32);

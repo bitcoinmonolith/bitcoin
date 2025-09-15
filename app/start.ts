@@ -1,6 +1,6 @@
 import { sha256 } from "@noble/hashes/sha2";
 import { bytesToHex, hexToBytes } from "@noble/hashes/utils";
-import { equals } from "jsr:@std/bytes";
+import { equals } from "@std/bytes";
 import { Bitcoin } from "~/Bitcoin.ts";
 import { GetHeadersHandler } from "~/handlers/GetHeadersHandler.ts";
 import { InvHandler } from "~/handlers/InvHandler.ts";
@@ -25,20 +25,31 @@ const DNS_SEEDS = [
 	"testnet-seed.bitcoin.sprovoost.nl",
 ]; */
 
-function recursiveBytesToHex(value: unknown): unknown {
+function recursiveToHumanReadable(value: unknown): unknown {
 	if (value instanceof Uint8Array) {
 		return bytesToHex(value.toReversed());
-	} else if (Array.isArray(value)) {
-		return value.map(recursiveBytesToHex);
-	} else if (value && typeof value === "object") {
+	}
+
+	if (typeof value === "bigint") {
+		return value.toString();
+	}
+
+	if (typeof value === "number") {
+		return `0x${value.toString(16)}`;
+	}
+
+	if (Array.isArray(value)) {
+		return value.map(recursiveToHumanReadable);
+	}
+
+	if (value && typeof value === "object") {
 		const obj: Record<string, unknown> = {};
 		for (const [k, v] of Object.entries(value)) {
-			obj[k] = recursiveBytesToHex(v);
+			obj[k] = recursiveToHumanReadable(v);
 		}
 		return obj;
-	} else {
-		return value;
 	}
+	return value;
 }
 
 const bitcoin = new class extends Bitcoin {
@@ -70,7 +81,9 @@ const bitcoin = new class extends Bitcoin {
 			relay: false,
 		};
 
-		const blockHash = hexToBytes("00000000000000000000fa3235940f587566c6c02e73aa14b3b699b518527500").reverse();
+		const modernBlock = hexToBytes("00000000000000000000fa3235940f587566c6c02e73aa14b3b699b518527500").reverse();
+		const genesisBlock = hexToBytes("000000000019d6689c085ae165831e934ff763ae46a2a6c172b3f1b60a8ce26f").reverse();
+		const testBlock = modernBlock;
 		peer.connect().then(async () => {
 			this.peers.add(peer);
 			await handshake(this, peer, version);
@@ -80,11 +93,11 @@ const bitcoin = new class extends Bitcoin {
 			await peer.send(GetDataMessage, {
 				inventory: [{
 					type: "WITNESS_BLOCK",
-					hash: blockHash,
+					hash: testBlock,
 				}],
 			});
-			const block = await this.expect(peer, BlockMessage, (block) => equals(block.header.hash, blockHash));
-			console.log("Block:", recursiveBytesToHex(block.header));
+			const block = await this.expect(peer, BlockMessage, (block) => equals(block.header.hash, testBlock));
+			console.log("Block:", recursiveToHumanReadable(block.header));
 			const computedMerkleRoot = computeSatoshiMerkleRoot(
 				block.txs.map((tx) => sha256(sha256(Tx.encode({ ...tx, witness: false })))),
 			);
@@ -93,11 +106,11 @@ const bitcoin = new class extends Bitcoin {
 			if (!equals(block.header.merkleRoot, computedMerkleRoot)) {
 				throw new Error("Invalid merkle root");
 			}
-			/* for (const tx of block.txs) {
+			for (const tx of block.txs) {
 				// const wtxid = bytesToHex(sha256(sha256(Tx.encode({ ...tx, witness: true }))).reverse());
 				const txId = bytesToHex(sha256(sha256(Tx.encode({ ...tx, witness: false }))).reverse());
-				console.log(`Tx[${txId}]:`, recursiveBytesToHex(tx));
-			} */
+				console.log(`Tx[${txId}]:`, recursiveToHumanReadable(tx));
+			}
 		});
 
 		await super.start();

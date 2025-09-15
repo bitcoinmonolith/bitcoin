@@ -3,7 +3,7 @@ import { BlockHeader } from "~/lib//primitives/BlockHeader.ts";
 import { Tx } from "~/lib//primitives/Tx.ts";
 import { CompactSize } from "~/lib/CompactSize.ts";
 import { bytesToHex, concatBytes } from "@noble/hashes/utils";
-import { equals } from "jsr:@std/bytes";
+import { equals } from "@std/bytes";
 
 export type Block = {
 	header: BlockHeader;

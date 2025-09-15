@@ -4,7 +4,12 @@
 		"@noble/hashes": "jsr:@noble/hashes@^1.8.0",
 		"@noble/secp256k1": "jsr:@noble/secp256k1@^2.3.0",
 		"@nomadshiba/struct-js": "jsr:@nomadshiba/struct-js@^0.2.0",
-		"kysely": "npm:kysely@^0.28.2",
+		"@soapbox/kysely-deno-sqlite": "jsr:@soapbox/kysely-deno-sqlite@^2.2.0",
+		"@std/bytes": "jsr:@std/bytes@^1.0.6",
+		"@std/encoding": "jsr:@std/encoding@^1.0.10",
+		"@std/path": "jsr:@std/path@^1.1.2",
+		"@deno/sqlite": "https://deno.land/x/sqlite@v3.9.1/mod.ts",
+		"kysely": "npm:kysely@^0.27.6",
 		"~/": "./app/"
 	},
 	"tasks": {
@@ -24,7 +29,7 @@
 	},
 	"lint": {
 		"rules": {
-			"exclude": ["no-namespace"]
+			"exclude": ["no-namespace", "no-explicit-any"]
 		}
 	}
 }
