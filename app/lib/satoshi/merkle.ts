@@ -11,7 +11,7 @@ export function computeSatoshiMerkleRoot(txids: Uint8Array[]): Uint8Array {
 		// detect mutation: identical siblings at the same level
 		for (let i = 0; i + 1 < hashes.length; i += 2) {
 			if (equals(hashes.at(i)!, hashes.at(i + 1)!)) {
-				return new Uint8Array(32); // reject mutated tree
+				return new Uint8Array(); // reject mutated tree
 			}
 		}
 
