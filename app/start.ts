@@ -52,71 +52,63 @@ function recursiveToHumanReadable(value: unknown): unknown {
 	return value;
 }
 
-const bitcoin = new class extends Bitcoin {
-	constructor() {
-		super({
-			handlers: [VersionHandler, PingHandler, SendCmpctHandler, GetHeadersHandler, InvHandler],
-		});
+const bitcoin = new Bitcoin({
+	handlers: [
+		VersionHandler,
+		PingHandler,
+		SendCmpctHandler,
+		GetHeadersHandler,
+		InvHandler,
+	],
+});
+
+const peer = new Peer("192.168.1.10", 8333, NETWORK_MAGIC);
+
+const NODE_NETWORK = 1n;
+const NODE_WITNESS = 1n << 3n; // 0x08
+
+const version: VersionMessage = {
+	version: 70015,
+	services: NODE_NETWORK | NODE_WITNESS,
+	timestamp: BigInt(Math.floor(Date.now() / 1000)),
+	recvServices: NODE_NETWORK | NODE_WITNESS,
+	recvIP: hexToBytes("00000000000000000000ffff0a000001"),
+	recvPort: 18333,
+	transServices: NODE_NETWORK | NODE_WITNESS,
+	transIP: hexToBytes("00000000000000000000ffff0a000001"),
+	transPort: 18333,
+	nonce: 987654321n,
+	userAgent: "/Satoshi:BitcoinClient:0.0.1-alpha.1/",
+	startHeight: 150000,
+	relay: false,
+};
+
+const modernBlock = hexToBytes("000000000000000000011cd4d27fc6ae94f6e436088fec3c873d6dc8d522a7e2").reverse();
+// const genesisBlock = hexToBytes("000000000019d6689c085ae165831e934ff763ae46a2a6c172b3f1b60a8ce26f").reverse();
+const testBlock = modernBlock;
+peer.connect().then(async () => {
+	bitcoin.addPeer(peer);
+	await handshake(peer, version);
+	await ping(peer);
+	await peer.send(SendHeadersMessage, {});
+
+	await peer.send(GetDataMessage, {
+		inventory: [{
+			type: "WITNESS_BLOCK",
+			hash: testBlock,
+		}],
+	});
+	const block = await peer.expect(BlockMessage, (block) => equals(getBlockHash(block.header), testBlock));
+
+	const computedMerkleRoot = computeSatoshiMerkleRoot(block.txs.map((tx) => getTxId(tx)));
+	console.log("Merkle Root:", bytesToHex(block.header.merkleRoot));
+	console.log("Computed:", bytesToHex(computedMerkleRoot));
+	if (!equals(block.header.merkleRoot, computedMerkleRoot)) {
+		throw new Error("Invalid merkle root");
 	}
-
-	public override async start(): Promise<void> {
-		const peer = new Peer("192.168.1.10", 8333, NETWORK_MAGIC);
-
-		const NODE_NETWORK = 1n;
-		const NODE_WITNESS = 1n << 3n; // 0x08
-
-		const version: VersionMessage = {
-			version: 70015,
-			services: NODE_NETWORK | NODE_WITNESS,
-			timestamp: BigInt(Math.floor(Date.now() / 1000)),
-			recvServices: NODE_NETWORK | NODE_WITNESS,
-			recvIP: hexToBytes("00000000000000000000ffff0a000001"),
-			recvPort: 18333,
-			transServices: NODE_NETWORK | NODE_WITNESS,
-			transIP: hexToBytes("00000000000000000000ffff0a000001"),
-			transPort: 18333,
-			nonce: 987654321n,
-			userAgent: "/Satoshi:BitcoinClient:0.0.1-alpha.1/",
-			startHeight: 150000,
-			relay: false,
-		};
-
-		const modernBlock = hexToBytes("000000000000000000011cd4d27fc6ae94f6e436088fec3c873d6dc8d522a7e2").reverse();
-		// const genesisBlock = hexToBytes("000000000019d6689c085ae165831e934ff763ae46a2a6c172b3f1b60a8ce26f").reverse();
-		const testBlock = modernBlock;
-		peer.connect().then(async () => {
-			this.peers.add(peer);
-			await handshake(this, peer, version);
-			await ping(this, peer);
-			await peer.send(SendHeadersMessage, {});
-
-			await peer.send(GetDataMessage, {
-				inventory: [{
-					type: "WITNESS_BLOCK",
-					hash: testBlock,
-				}],
-			});
-			const block = await this.expect(
-				peer,
-				BlockMessage,
-				(block) => equals(getBlockHash(block.header), testBlock),
-			);
-
-			const computedMerkleRoot = computeSatoshiMerkleRoot(block.txs.map((tx) => getTxId(tx)));
-			console.log("Merkle Root:", bytesToHex(block.header.merkleRoot));
-			console.log("Computed:", bytesToHex(computedMerkleRoot));
-			if (!equals(block.header.merkleRoot, computedMerkleRoot)) {
-				throw new Error("Invalid merkle root");
-			}
-			for (const tx of block.txs) {
-				const txId = getTxId(tx);
-				console.log(`Tx[${txId}]:`, recursiveToHumanReadable(tx));
-			}
-			console.log("Block:", recursiveToHumanReadable(block.header));
-		});
-
-		await super.start();
+	for (const tx of block.txs) {
+		const txId = getTxId(tx);
+		console.log(`Tx[${txId}]:`, recursiveToHumanReadable(tx));
 	}
-}();
-
-await bitcoin.start();
+	console.log("Block:", recursiveToHumanReadable(block.header));
+});

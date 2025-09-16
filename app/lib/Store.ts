@@ -41,7 +41,7 @@ export class Store<
 
 	constructor(keyCodecs: KeyCodecs<K>, valueCodec: Codec<V>, options: Store.ConnectOptions) {
 		this.keyCodecs = keyCodecs;
-		this.keyCodec = new Tuple<KeyCodecs<K>>(keyCodecs);
+		this.keyCodec = new Tuple<K>(keyCodecs);
 		this.valueCodec = valueCodec;
 
 		const filepath = join(options.base, `${options.name}.sqlite3`);

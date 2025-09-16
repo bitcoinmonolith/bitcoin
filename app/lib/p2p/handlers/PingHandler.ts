@@ -13,9 +13,9 @@ export const PingHandler: Bitcoin.MessageHandler<PingMessage> = {
 	},
 };
 
-export async function ping(ctx: Bitcoin, peer: Peer) {
+export async function ping(peer: Peer) {
 	const nonce = new BytesView(randomBytes(8)).getBigUint64(0, true);
 	await peer.send(PingMessage, { nonce });
-	await ctx.expect(peer, PongMessage, (pong) => pong.nonce === nonce);
+	await peer.expect(PongMessage, (pong) => pong.nonce === nonce);
 	peer.log("🏓 Pong received");
 }

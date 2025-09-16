@@ -11,9 +11,9 @@ export const VersionHandler: Bitcoin.MessageHandler<VersionMessage> = {
 	},
 };
 
-export async function handshake(ctx: Bitcoin, peer: Peer, version: VersionMessage) {
+export async function handshake(peer: Peer, version: VersionMessage) {
 	await peer.send(VersionMessage, version);
 	peer.log(`📗 Sent version`);
-	await ctx.expect(peer, VerackMessage, () => true);
+	await peer.expect(VerackMessage, () => true);
 	peer.log(`✅ Handshake complete`);
 }

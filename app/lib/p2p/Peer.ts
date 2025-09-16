@@ -1,7 +1,6 @@
 import { sha256 } from "@noble/hashes/sha2";
-import { CommandBuffer } from "~/lib/CommandBuffer.ts";
-import { BytesView } from "~/lib/BytesView.ts";
 import { Codec } from "@nomadshiba/struct-js";
+import { BytesView } from "~/lib/BytesView.ts";
 
 const textEncoder = new TextEncoder();
 const textDecoder = new TextDecoder("ascii");
@@ -20,6 +19,9 @@ export declare namespace Peer {
 	export type Error = {
 		message: string;
 	};
+
+	export type Listener = (payload: Peer.MessagePayload) => void;
+	export type Unlistener = () => void;
 }
 
 export class Peer {
@@ -32,7 +34,7 @@ export class Peer {
 	public readonly port: number;
 	public readonly magic: Uint8Array;
 
-	private readonly messageCommandBuffer = new CommandBuffer<Peer.MessagePayload>();
+	private readonly listeners: Set<Peer.Listener> = new Set();
 	private connection: Deno.Conn | null = null;
 
 	constructor(host: string, port: number, magic: Uint8Array) {
@@ -105,26 +107,27 @@ export class Peer {
 						const command = textDecoder.decode(inbox.subarray(4, 16)).replace(/\0+$/, "");
 						const payload = inbox.subarray(24, totalLength);
 
-						this.messageCommandBuffer.push({ command, payload });
+						for (const listener of this.listeners) {
+							listener({ command, payload });
+						}
 						inbox = inbox.subarray(totalLength);
 					}
 				}
 			} catch (err) {
 				this.logError(err);
 			} finally {
-				this.#connected = false;
-				this.log(`👋 Disconnected from peer`);
-				connection.close();
+				this.disconnect();
 			}
 		});
 	}
 
 	disconnect(): void {
 		if (!this.#connected || !this.connection) return;
-		this.#connected = false;
 		this.log(`🔌 Disconnecting from peer...`);
+		this.#connected = false;
 		this.connection.close();
 		this.connection = null;
+		this.log(`👋 Disconnected from peer`);
 	}
 
 	async send<T>(message: Peer.Message<T>, data: T): Promise<void> {
@@ -149,8 +152,29 @@ export class Peer {
 		await this.connection.write(bytes);
 	}
 
-	consumeMessages() {
-		return this.messageCommandBuffer.consume();
+	listen(listener: Peer.Listener): Peer.Unlistener {
+		this.listeners.add(listener);
+		return () => {
+			this.listeners.delete(listener);
+		};
+	}
+
+	expect<T>(message: Peer.Message<T>, matcher: (data: T, raw: Uint8Array) => boolean): Promise<T> {
+		return new Promise<T>((resolve, reject) => {
+			const unlisten = this.listen((msg) => {
+				if (msg.command !== message.command) return;
+				const data = message.codec.decode(msg.payload);
+				if (!matcher(data, msg.payload)) return;
+				this.log(`✅ Matched expected ${msg.command}`);
+				unlisten();
+				resolve(data);
+			});
+
+			setTimeout(() => {
+				unlisten();
+				reject(new Error(`Timeout waiting for ${message.command}`));
+			}, 30000);
+		});
 	}
 
 	log(...params: unknown[]) {
