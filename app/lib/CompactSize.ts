@@ -1,6 +1,5 @@
 import { BytesView } from "~/lib/BytesView.ts";
-
-const MAX_BLOCK_BYTES = 4_000_000;
+import { MAX_BLOCK_BYTES } from "./constants.ts";
 
 /*
     Since max size we are going to handle is 4 million, we can use number type safely here.

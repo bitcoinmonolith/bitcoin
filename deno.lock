@@ -5,7 +5,7 @@
     "jsr:@noble/hashes@1.8.0": "1.8.0",
     "jsr:@noble/hashes@^1.8.0": "1.8.0",
     "jsr:@noble/secp256k1@^2.3.0": "2.3.0",
-    "jsr:@nomadshiba/struct-js@0.3": "0.3.0",
+    "jsr:@nomadshiba/struct-js@~0.3.2": "0.3.2",
     "jsr:@soapbox/kysely-deno-sqlite@^2.2.0": "2.2.0",
     "jsr:@std/assert@*": "1.0.13",
     "jsr:@std/bytes@*": "1.0.6",
@@ -33,8 +33,8 @@
     "@noble/secp256k1@2.3.0": {
       "integrity": "63eb4479a7c548e0ddea1cb5ea9bf7efacafe495e7f1c07bce1b4108df95967f"
     },
-    "@nomadshiba/struct-js@0.3.0": {
-      "integrity": "261c7d98feac6a1b51ae9e8d7d231ddfa9c0cb4569fcebe9c526be798a3d484c"
+    "@nomadshiba/struct-js@0.3.2": {
+      "integrity": "d9929024e5535b4c5b1d78f4d38c2b04d19b9f4ab7daee6fb4bef5590f5f5fc5"
     },
     "@soapbox/kysely-deno-sqlite@2.2.0": {
       "integrity": "668ec94600bc4b4d7bd618dd7ca65d4ef30ee61c46ffcb379b6f45203c08517a",
@@ -1495,7 +1495,7 @@
       "jsr:@noble/curves@^1.9.0",
       "jsr:@noble/hashes@^1.8.0",
       "jsr:@noble/secp256k1@^2.3.0",
-      "jsr:@nomadshiba/struct-js@0.3",
+      "jsr:@nomadshiba/struct-js@~0.3.2",
       "jsr:@soapbox/kysely-deno-sqlite@^2.2.0",
       "jsr:@std/bytes@^1.0.6",
       "jsr:@std/encoding@^1.0.10",

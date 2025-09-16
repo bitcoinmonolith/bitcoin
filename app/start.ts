@@ -6,14 +6,17 @@ import { InvHandler } from "~/lib/p2p/handlers/InvHandler.ts";
 import { ping, PingHandler } from "~/lib/p2p/handlers/PingHandler.ts";
 import { SendCmpctHandler } from "~/lib/p2p/handlers/SendCmpctHandler.ts";
 import { handshake, VersionHandler } from "~/lib/p2p/handlers/VersionHandler.ts";
-import { Peer } from "~/lib/p2p/Peer.ts";
 import { BlockMessage } from "~/lib/p2p/messages/Block.ts";
 import { GetDataMessage } from "~/lib/p2p/messages/GetData.ts";
-import { SendHeadersMessage } from "~/lib/p2p/messages/SendHeaders.ts";
 import { VersionMessage } from "~/lib/p2p/messages/Version.ts";
+import { Peer } from "~/lib/p2p/Peer.ts";
+import { GENESIS_BLOCK_HASH } from "./lib/constants.ts";
+import { GetHeadersMessage } from "./lib/p2p/messages/GetHeaders.ts";
+import { HeadersMessage } from "./lib/p2p/messages/Headers.ts";
 import { getBlockHash } from "./lib/primitives/BlockHeader.ts";
 import { getTxId } from "./lib/primitives/Tx.ts";
 import { computeSatoshiMerkleRoot } from "./lib/satoshi/merkle.ts";
+import { saveBlock } from "./lib/storage/blocks.ts";
 
 const NETWORK_MAGIC = hexToBytes("f9beb4d9"); // Mainnet
 /* const NETWORK_MAGIC = hexToBytes("0b110907"); // Testnet
@@ -25,7 +28,7 @@ const DNS_SEEDS = [
 	"testnet-seed.bitcoin.sprovoost.nl",
 ]; */
 
-function recursiveToHumanReadable(value: unknown): unknown {
+export function recursiveToHumanReadable(value: unknown): unknown {
 	if (value instanceof Uint8Array) {
 		return bytesToHex(value.toReversed());
 	}
@@ -84,31 +87,76 @@ const version: VersionMessage = {
 };
 
 const modernBlock = hexToBytes("000000000000000000011cd4d27fc6ae94f6e436088fec3c873d6dc8d522a7e2").reverse();
-// const genesisBlock = hexToBytes("000000000019d6689c085ae165831e934ff763ae46a2a6c172b3f1b60a8ce26f").reverse();
-const testBlock = modernBlock;
-peer.connect().then(async () => {
+
+let bestHeight = 0;
+let bestHash = GENESIS_BLOCK_HASH;
+
+async function sync(peer: Peer) {
+	// step 1: ask headers
+	await peer.send(GetHeadersMessage, {
+		version: version.version,
+		hashes: [bestHash], // simple locator for now
+		stopHash: new Uint8Array(32),
+	});
+
+	// step 2: receive headers
+	const headersMsg = await peer.expect(
+		HeadersMessage,
+		(msg) => msg.headers.length === 0 || Boolean(msg.headers[0] && equals(msg.headers[0]?.prevHash, bestHash)),
+	);
+	const headers = headersMsg.headers;
+	if (headers.length === 0) {
+		console.log("caught up to peer tip");
+		return;
+	}
+	if (bestHash === GENESIS_BLOCK_HASH) {
+		await peer.send(GetDataMessage, {
+			inventory: [{ type: "WITNESS_BLOCK", hash: GENESIS_BLOCK_HASH }],
+		});
+		const block = await peer.expect(BlockMessage, (b) => equals(getBlockHash(b.header), GENESIS_BLOCK_HASH));
+		await saveBlock(0, block);
+		console.log(`saved genesis block 0`);
+	}
+
+	let prevHash = bestHash;
+	for (const header of headers) {
+		// validate header chain
+		if (!equals(header.prevHash, prevHash)) {
+			throw new Error("chain broken");
+		}
+
+		const hash = getBlockHash(header);
+		const height = ++bestHeight;
+		prevHash = hash;
+		bestHash = hash;
+
+		// step 3: request block
+		await peer.send(GetDataMessage, {
+			inventory: [{ type: "WITNESS_BLOCK", hash }],
+		});
+
+		// step 4: receive block
+		const block = await peer.expect(BlockMessage, (b) => equals(getBlockHash(b.header), hash));
+
+		// step 5: verify merkle root
+		const computedMerkle = computeSatoshiMerkleRoot(block.txs.map(getTxId));
+		if (!equals(computedMerkle, block.header.merkleRoot)) {
+			throw new Error("invalid merkle root");
+		}
+
+		// step 6: save block
+		await saveBlock(height, block);
+
+		console.log(`saved block ${height}`);
+	}
+
+	// step 7: loop until tip
+	await sync(peer);
+}
+
+await peer.connect().then(async () => {
 	bitcoin.addPeer(peer);
 	await handshake(peer, version);
 	await ping(peer);
-	await peer.send(SendHeadersMessage, {});
-
-	await peer.send(GetDataMessage, {
-		inventory: [{
-			type: "WITNESS_BLOCK",
-			hash: testBlock,
-		}],
-	});
-	const block = await peer.expect(BlockMessage, (block) => equals(getBlockHash(block.header), testBlock));
-
-	const computedMerkleRoot = computeSatoshiMerkleRoot(block.txs.map((tx) => getTxId(tx)));
-	console.log("Merkle Root:", bytesToHex(block.header.merkleRoot));
-	console.log("Computed:", bytesToHex(computedMerkleRoot));
-	if (!equals(block.header.merkleRoot, computedMerkleRoot)) {
-		throw new Error("Invalid merkle root");
-	}
-	for (const tx of block.txs) {
-		const txId = getTxId(tx);
-		console.log(`Tx[${txId}]:`, recursiveToHumanReadable(tx));
-	}
-	console.log("Block:", recursiveToHumanReadable(block.header));
+	await sync(peer);
 });

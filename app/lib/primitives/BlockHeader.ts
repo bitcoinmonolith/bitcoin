@@ -1,6 +1,6 @@
 import { sha256 } from "@noble/hashes/sha2";
 import { i32, Struct, u32 } from "@nomadshiba/struct-js";
-import { bytes32 } from "~/lib//primitives/Bytes32.ts";
+import { bytes32 } from "~/lib/primitives/Bytes32.ts";
 
 export type BlockHeader = Readonly<{
 	version: number;

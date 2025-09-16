@@ -1,13 +1,11 @@
 import { DB as Sqlite } from "@deno/sqlite";
-import { Codec, Tuple } from "@nomadshiba/struct-js";
+import { Codec } from "@nomadshiba/struct-js";
 import { DenoSqliteDialect } from "@soapbox/kysely-deno-sqlite";
 import { dirname, join } from "@std/path";
-import { Kysely, sql, Transaction } from "kysely";
+import { Kysely, Transaction } from "kysely";
+import { PartialTuple } from "./types.ts";
 
-type KvSchema = {
-	key: Uint8Array;
-	value: Uint8Array;
-};
+type KvSchema = { value: Uint8Array } & { [K in `key${number}`]: Uint8Array };
 type DB = { kv: KvSchema };
 
 export namespace Store {
@@ -36,12 +34,10 @@ export class Store<
 	private readonly database: Kysely<DB> | Transaction<DB>;
 
 	public readonly keyCodecs: KeyCodecs<K>;
-	public readonly keyCodec: Codec<K>;
 	public readonly valueCodec: Codec<V>;
 
 	constructor(keyCodecs: KeyCodecs<K>, valueCodec: Codec<V>, options: Store.ConnectOptions) {
 		this.keyCodecs = keyCodecs;
-		this.keyCodec = new Tuple<K>(keyCodecs);
 		this.valueCodec = valueCodec;
 
 		const filepath = join(options.base, `${options.name}.sqlite3`);
@@ -51,68 +47,80 @@ export class Store<
 			dialect: new DenoSqliteDialect({
 				database: new Sqlite(filepath, { mode: "create" }),
 				async onCreateConnection(connection) {
-					await connection.executeQuery(sql`PRAGMA journal_mode = WAL`.compile(database));
-					await connection.executeQuery(sql`PRAGMA busy_timeout = 5000`.compile(database));
-					await connection.executeQuery(
-						database.schema
-							.createTable("kv")
-							.ifNotExists()
-							.addColumn("key", "blob", (col) => col.primaryKey())
-							.addColumn("value", "blob", (col) => col.notNull())
-							.compile(),
+					let query = database.schema.createTable("kv").ifNotExists();
+					for (const i of keyCodecs.keys()) {
+						query = query.addColumn(`key${i}`, "blob", (col) => col.notNull());
+					}
+					query = query.addColumn("value", "blob", (col) => col.notNull());
+					query = query.addPrimaryKeyConstraint(
+						`pk_${options.name}`,
+						keyCodecs.map((_, i) => `key${i}`) as never,
 					);
+					await connection.executeQuery(query.compile());
 				},
 			}),
 		});
 		new FinalizationRegistry((database: Kysely<DB>) => database.destroy()).register(this, database);
 	}
 
-	public async get(key: K): Promise<V | undefined> {
-		const key_bytes = this.keyCodec.encode(key);
-		const row = await this.database
-			.selectFrom("kv")
-			.select(["value"])
-			.where("key", "=", key_bytes)
-			.executeTakeFirst();
-		return row ? this.valueCodec.decode(row.value) : undefined;
-	}
-
-	public async getMany(keys: K[] | ArrayIterator<K>): Promise<V[]> {
-		const keys_base64 = keys.map((key) => this.keyCodec.encode(key));
-		const rows = await this.database
-			.selectFrom("kv")
-			.select(["key", "value"])
-			.where("key", "in", Array.isArray(keys_base64) ? keys_base64 : keys_base64.toArray())
-			.execute();
+	public async get(key: PartialTuple<K>): Promise<V[]> {
+		let query = this.database.selectFrom("kv").select(["value"]);
+		for (const [i, k] of key.entries()) {
+			query = query.where(`key${i}`, "=", this.keyCodecs[i]!.encode(k));
+		}
+		const rows = await query.execute();
 		return rows.map((row) => this.valueCodec.decode(row.value));
 	}
 
-	public async set(
-		key: K,
-		value: V,
-		options: { createOnly?: boolean } = {},
-	): Promise<boolean> {
-		const key_bytes = this.keyCodec.encode(key);
-		const value_bytes = this.valueCodec.encode(value);
-		const result = await this.database
-			.insertInto("kv")
-			.values({ key: key_bytes, value: value_bytes })
-			.onConflict((oc) => {
-				if (options.createOnly) return oc.column("key").doNothing();
-				return oc.column("key").doUpdateSet((eb) => ({ value: eb.ref("excluded.value") }));
-			})
-			.executeTakeFirstOrThrow();
-
-		const createdOrUpdated = Boolean(result.numInsertedOrUpdatedRows);
-		return createdOrUpdated;
+	public async getRaw(key: PartialTuple<K>): Promise<Uint8Array[]> {
+		let query = this.database.selectFrom("kv").select(["value"]);
+		for (const [i, k] of key.entries()) {
+			query = query.where(`key${i}`, "=", this.keyCodecs[i]!.encode(k));
+		}
+		const rows = await query.execute();
+		return rows.map((row) => row.value);
 	}
 
-	public async delete(key: K): Promise<boolean> {
-		const key_bytes = this.keyCodec.encode(key);
+	public async getMany(keys: PartialTuple<K>[] | ArrayIterator<K>): Promise<[K, V][]> {
+		const keysArray = Array.isArray(keys) ? keys : Array.from(keys);
+		let query = this.database.selectFrom("kv").select([
+			"value",
+			...this.keyCodecs.map((_, i) => `key${i}` as const),
+		]);
+		query = query.where((eb) =>
+			eb.or(keysArray.map((key) => eb.and(key.map((k, i) => eb(`key${i}`, "=", this.keyCodecs[i]!.encode(k))))))
+		);
+		const rows = await query.execute();
+		return rows.map((row) => {
+			const key = this.keyCodecs.map((codec, i) => codec.decode(row[`key${i}`]!));
+			const value = this.valueCodec.decode(row.value);
+			return [key, value] as [K, V];
+		});
+	}
+
+	public async set(key: K, value: V): Promise<boolean> {
+		const values: any = { value: this.valueCodec.encode(value) };
+		for (const [i, codec] of this.keyCodecs.entries()) {
+			values[`key${i}`] = codec.encode(key[i]);
+		}
 		const result = await this.database
-			.deleteFrom("kv")
-			.where("key", "=", key_bytes)
+			.insertInto("kv")
+			.values(values)
+			.onConflict((oc) =>
+				oc.columns(this.keyCodecs.keys().map((i) => `key${i}` as const).toArray())
+					.doUpdateSet({ value: (eb) => eb.ref("excluded.value") })
+			)
 			.executeTakeFirstOrThrow();
+
+		return Boolean(result.numInsertedOrUpdatedRows);
+	}
+
+	public async delete(key: PartialTuple<K>): Promise<boolean> {
+		let query = this.database.deleteFrom("kv");
+		for (const [i, k] of key.entries()) {
+			query = query.where(`key${i}`, "=", this.keyCodecs[i]!.encode(k));
+		}
+		const result = await query.executeTakeFirstOrThrow();
 		return Boolean(result.numDeletedRows);
 	}
 
@@ -121,35 +129,6 @@ export class Store<
 			.deleteFrom("kv")
 			.executeTakeFirstOrThrow();
 		return Boolean(result.numDeletedRows);
-	}
-
-	public async list(options: Store.ManyOptions<K, V> = {}): Promise<V[]> {
-		let query = this.database.selectFrom("kv").select("value");
-
-		if (options.keys) {
-			const keys = options.keys.map((key) => this.keyCodec.encode(key));
-			query = query.where("key", "in", Array.isArray(keys) ? keys : keys.toArray());
-		}
-
-		if (options.start) {
-			query = query.where("key", ">=", this.keyCodec.encode(options.start));
-		}
-
-		if (options.end) {
-			query = query.where("key", "<", this.keyCodec.encode(options.end));
-		}
-
-		if (options.take !== undefined) {
-			query = query.limit(options.take);
-		}
-
-		if (options.skip !== undefined) {
-			query = query.offset(options.skip);
-		}
-
-		const rows = await query.execute();
-
-		return rows.map((row) => this.valueCodec.decode(row.value));
 	}
 
 	public transaction() {

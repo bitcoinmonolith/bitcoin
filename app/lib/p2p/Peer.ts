@@ -159,10 +159,11 @@ export class Peer {
 		};
 	}
 
-	expect<T>(message: Peer.Message<T>, matcher: (data: T, raw: Uint8Array) => boolean): Promise<T> {
+	expect<T>(message: Peer.Message<T>, matcher: (msg: T, raw: Uint8Array) => boolean): Promise<T> {
 		return new Promise<T>((resolve, reject) => {
 			const unlisten = this.listen((msg) => {
 				if (msg.command !== message.command) return;
+				this.log(`📥 Received: ${msg.command} (${msg.payload.length} bytes)`);
 				const data = message.codec.decode(msg.payload);
 				if (!matcher(data, msg.payload)) return;
 				this.log(`✅ Matched expected ${msg.command}`);
@@ -178,7 +179,7 @@ export class Peer {
 	}
 
 	log(...params: unknown[]) {
-		console.log(`${this.host}:${this.port}`, "→", ...params);
+		// console.log(`${this.host}:${this.port}`, "→", ...params);
 	}
 	logError(...params: unknown[]) {
 		console.error(`${this.host}:${this.port}`, "→", ...params);

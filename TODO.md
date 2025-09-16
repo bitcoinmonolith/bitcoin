@@ -8,10 +8,10 @@
   - [ ] Blocks are stored by height in chunks, so we can know where to look for them.
   - [ ] Another thing is instead of having internal ids for txs we can also use their offset in the block while pointing
         to them.
-  - [ ] We still have to store txids and block hashes though, so we can find them. BUT instead of storing full hashes we
+  - [ ] We still have to store txIds and block hashes though, so we can find them. BUT instead of storing full hashes we
         can store the shortest unique prefix. once we find them by prefix we can rehash the full thing to make sure it's
         the same. Of course these are also cashed in storage and memory with a size limit.
-  - [ ] prev vouts can also be pointed at by block height + vout byte offset, instead of txid + vout index.
+  - [ ] prev vouts can also be pointed at by block height + vout byte offset, instead of txId + vout index.
   - [ ] UTXO is not stored separately, instead we just mark the vout as spent in the block it was created in. This way
         we dont need extra storage for UTXO set.
   - [ ] Of course we should have an api that doesn't care about any of this internal stuff, and just works and caches

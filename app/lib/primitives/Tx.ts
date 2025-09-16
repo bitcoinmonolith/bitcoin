@@ -8,18 +8,18 @@ import { sha256 } from "@noble/hashes/sha2";
 
 export type Tx = Readonly<{
 	version: number;
-	vin: ReadonlyArray<TxIn>;
-	vout: ReadonlyArray<TxOut>;
-	absoluteLock: AbsoluteLock;
+	vin: TxIn[];
+	vout: TxOut[];
+	lockTime: AbsoluteLock;
 	witness: boolean;
 }>;
 
 export type TxIn = Readonly<{
-	txid: Uint8Array; // 32 bytes, LE on wire
+	txId: Uint8Array; // 32 bytes, LE on wire
 	vout: number;
 	scriptSig: Uint8Array;
 	sequenceLock: SequenceLock;
-	witness: ReadonlyArray<Uint8Array>;
+	witness: Uint8Array[];
 }>;
 
 export type TxOut = Readonly<{
@@ -47,7 +47,7 @@ export class TxCodec extends Codec<Tx> {
 		// vin
 		chunks.push(CompactSize.encode(tx.vin.length));
 		for (const vin of tx.vin) {
-			chunks.push(vin.txid); // already LE on wire
+			chunks.push(vin.txId); // already LE on wire
 
 			const voutBuf = new Uint8Array(4);
 			new BytesView(voutBuf).setUint32(0, vin.vout, true);
@@ -85,7 +85,7 @@ export class TxCodec extends Codec<Tx> {
 
 		// locktime (uint32 LE)
 		const lockBuf = new Uint8Array(4);
-		new BytesView(lockBuf).setUint32(0, AbsoluteLock.encode(tx.absoluteLock), true);
+		new BytesView(lockBuf).setUint32(0, AbsoluteLock.encode(tx.lockTime), true);
 		chunks.push(lockBuf);
 
 		return concat(chunks);
@@ -125,7 +125,7 @@ export class TxCodec extends Codec<Tx> {
 		const vin: TxIn[] = [];
 		for (let i = 0; i < vinCount; i++) {
 			// copy slices to avoid aliasing the original buffer
-			const txid = bytes.slice(offset, offset + 32);
+			const txId = bytes.slice(offset, offset + 32);
 			offset += 32;
 
 			const vout = new BytesView(bytes, offset, 4).getUint32(0, true);
@@ -140,7 +140,7 @@ export class TxCodec extends Codec<Tx> {
 			offset += 4;
 
 			vin.push({
-				txid,
+				txId,
 				vout,
 				scriptSig,
 				sequenceLock: SequenceLock.decode(sequence),
@@ -190,7 +190,7 @@ export class TxCodec extends Codec<Tx> {
 			version,
 			vin,
 			vout,
-			absoluteLock: AbsoluteLock.decode(locktime),
+			lockTime: AbsoluteLock.decode(locktime),
 			witness: hasWitness,
 		};
 
@@ -211,8 +211,8 @@ export const Tx = new TxCodec();
 const bytesCache = new WeakMap<Tx, Uint8Array>();
 const txIdCache = new WeakMap<Tx, Uint8Array>();
 export function getTxId(tx: Tx): Uint8Array {
-	let txid = txIdCache.get(tx);
-	if (!txid) {
+	let txId = txIdCache.get(tx);
+	if (!txId) {
 		let bytes = bytesCache.get(tx);
 		if (!bytes) {
 			if (tx.witness) {
@@ -224,17 +224,17 @@ export function getTxId(tx: Tx): Uint8Array {
 				wBytesCache.set(tx, bytes);
 			}
 		}
-		txid = sha256(sha256(bytes));
-		txIdCache.set(tx, txid);
+		txId = sha256(sha256(bytes));
+		txIdCache.set(tx, txId);
 	}
-	return txid;
+	return txId;
 }
 
 const wBytesCache = new WeakMap<Tx, Uint8Array>();
 const wTxIdCache = new WeakMap<Tx, Uint8Array>();
 export function getWTxId(tx: Tx): Uint8Array {
-	let wtxid = wTxIdCache.get(tx);
-	if (!wtxid) {
+	let wtxId = wTxIdCache.get(tx);
+	if (!wtxId) {
 		let wbytes = wBytesCache.get(tx);
 		if (!wbytes) {
 			if (tx.witness) {
@@ -246,8 +246,8 @@ export function getWTxId(tx: Tx): Uint8Array {
 				bytesCache.set(tx, wbytes);
 			}
 		}
-		wtxid = sha256(sha256(wbytes));
-		wTxIdCache.set(tx, wtxid);
+		wtxId = sha256(sha256(wbytes));
+		wTxIdCache.set(tx, wtxId);
 	}
-	return wtxid;
+	return wtxId;
 }
