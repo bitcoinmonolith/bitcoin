@@ -2,7 +2,7 @@ import { DB as Sqlite } from "@deno/sqlite";
 import { Codec } from "@nomadshiba/struct-js";
 import { DenoSqliteDialect } from "@soapbox/kysely-deno-sqlite";
 import { dirname, join } from "@std/path";
-import { Kysely, Transaction } from "kysely";
+import { Kysely, sql, Transaction } from "kysely";
 import { PartialTuple } from "./types.ts";
 import { bytesToHex, hexToBytes } from "@noble/hashes/utils";
 
@@ -31,9 +31,9 @@ export class Store<
 	public readonly keyCodecs: KeyCodecs<K>;
 	public readonly valueCodec: Codec<V>;
 
-	private readonly database: Kysely<DB> | Transaction<DB>;
-	private readonly memory: Map<string, V>;
-	private readonly prefixes: Map<string, Set<string>>[];
+	private database: Kysely<DB> | Transaction<DB>;
+	private memory: Map<string, V>;
+	private prefixes: Map<string, Set<string>>[];
 
 	private encodeKey(key: PartialTuple<K>): string {
 		return key.map((k, i) => bytesToHex(this.keyCodecs[i]!.encode(k))).join(":");
@@ -60,6 +60,12 @@ export class Store<
 						keyCodecs.map((_, i) => `key${i}`) as never,
 					);
 					await connection.executeQuery(query.compile());
+
+					await connection.executeQuery(sql`PRAGMA journal_mode = WAL`.compile(database)); // Better concurrency
+					await connection.executeQuery(sql`PRAGMA synchronous = NORMAL`.compile(database)); // Balance between performance and safety
+					await connection.executeQuery(sql`PRAGMA temp_store = MEMORY`.compile(database)); // Use memory for temp storage
+					await connection.executeQuery(sql`PRAGMA mmap_size = 1073741824`.compile(database)); // Use memory-mapped I/O up to 30GB
+					await connection.executeQuery(sql`PRAGMA cache_size = -64000`.compile(database)); // Use up to 64MB for page cache
 				},
 			}),
 		});
@@ -201,17 +207,21 @@ export class Store<
 	}
 
 	public async flush(): Promise<void> {
-		const entries = Array.from(this.memory.entries());
+		const memory = this.memory;
+		this.memory = new Map();
+		this.prefixes.forEach((set) => set.clear());
+
+		const entries = Array.from(memory.entries());
 		while (entries.length > 0) {
 			const chunk = entries.splice(0, 1000);
 			const query = this.database.insertInto("kv").values(
 				chunk.map(([encodedKey, value]) => {
-					const keyParts = encodedKey.split(":").map((part, i) =>
-						this.keyCodecs[i]!.decode(hexToBytes(part))
-					);
-					const obj: any = { value: this.valueCodec.encode(value) };
-					keyParts.forEach((k, i) => obj[`key${i}`] = this.keyCodecs[i]!.encode(k));
-					return obj;
+					const values: any = { value: this.valueCodec.encode(value) };
+					const keyParts = encodedKey.split(":");
+					for (let i = 0; i < this.keyCodecs.length; i++) {
+						values[`key${i}`] = hexToBytes(keyParts[i]!);
+					}
+					return values;
 				}),
 			).onConflict((oc) =>
 				oc.columns(this.keyCodecs.keys().map((i) => `key${i}` as const).toArray())
@@ -220,7 +230,5 @@ export class Store<
 
 			await query.execute();
 		}
-		this.memory.clear();
-		this.prefixes.forEach((map) => map.clear());
 	}
 }

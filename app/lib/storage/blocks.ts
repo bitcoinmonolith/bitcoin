@@ -74,7 +74,6 @@ type BlockHeaderData = Codec.Infer<typeof BlockHeaderData>;
 const BlockHeaderData = new Struct({
 	version: i32,
 	prevHash: bytes32,
-	merkleRoot: bytes32,
 	timestamp: u32,
 	bits: u32,
 	nonce: u32,
@@ -244,11 +243,6 @@ export async function saveBlock(blockHeight: number, block: Block) {
 	const txStore = getTxStore(range);
 
 	const localHeight = blockHeight - range.start;
-	const existing = (await blockStore.get([localHeight])).at(0);
-	if (existing) {
-		// Block already saved, nothing to do
-		return;
-	}
 
 	const coinbaseTx = block.txs.at(0);
 	if (!coinbaseTx) {
@@ -279,9 +273,11 @@ export async function saveBlock(blockHeight: number, block: Block) {
 	for (const [txIndex, tx] of block.txs.entries().drop(1)) {
 		const txId = getTxId(tx);
 		const vin: TxInData[] = [];
-		for (const vinEntry of tx.vin) {
+		for (const [vinIndex, vinEntry] of tx.vin.entries()) {
 			const utxoTx = await getTxByTxId(vinEntry.txId);
 			if (!utxoTx) {
+				console.log("Input txId:", bytesToHex(txId.toReversed()), "vin:", vinIndex);
+				console.log("UTXO txId:", bytesToHex(vinEntry.txId.toReversed()), "vout:", vinEntry.vout);
 				console.log("Missing txId:", bytesToHex(vinEntry.txId.toReversed()));
 				throw new Error("Referenced UTXO transaction not found");
 			}

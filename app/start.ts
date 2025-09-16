@@ -116,7 +116,6 @@ async function sync(peer: Peer) {
 		});
 		const block = await peer.expect(BlockMessage, (b) => equals(getBlockHash(b.header), GENESIS_BLOCK_HASH));
 		await saveBlock(0, block);
-		console.log(`saved genesis block 0`);
 	}
 
 	let prevHash = bestHash;
@@ -154,8 +153,6 @@ async function sync(peer: Peer) {
 
 		// step 6: save block
 		await saveBlock(height, block);
-
-		console.log(`saved block ${height}`);
 	}
 
 	// step 7: loop until tip
