@@ -129,7 +129,7 @@ async function sync(peer: Peer) {
 		if (bestHeight % 100 === 0) {
 			const time = performance.now() - lastStart;
 			lastStart = performance.now();
-			const blocksPerSecond = 1000 / (time / 1000);
+			const blocksPerSecond = 100 / (time / 1000);
 			console.log(`syncing... height=${bestHeight} (${blocksPerSecond.toFixed(2)} blocks/s)`);
 		}
 
