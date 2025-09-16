@@ -91,6 +91,7 @@ const modernBlock = hexToBytes("000000000000000000011cd4d27fc6ae94f6e436088fec3c
 let bestHeight = 0;
 let bestHash = GENESIS_BLOCK_HASH;
 
+let lastStart = 0;
 async function sync(peer: Peer) {
 	// step 1: ask headers
 	await peer.send(GetHeadersMessage, {
@@ -123,6 +124,13 @@ async function sync(peer: Peer) {
 		// validate header chain
 		if (!equals(header.prevHash, prevHash)) {
 			throw new Error("chain broken");
+		}
+
+		if (bestHeight % 100 === 0) {
+			const time = performance.now() - lastStart;
+			lastStart = performance.now();
+			const blocksPerSecond = 1000 / (time / 1000);
+			console.log(`syncing... height=${bestHeight} (${blocksPerSecond.toFixed(2)} blocks/s)`);
 		}
 
 		const hash = getBlockHash(header);

@@ -14,7 +14,7 @@ export namespace Store {
 		name: string;
 	};
 
-	export type ManyOptions<K extends unknown[], V extends unknown> = {
+	export type ManyOptions<K extends readonly unknown[], V extends unknown> = {
 		start?: K;
 		end?: K;
 		take?: number;
@@ -22,13 +22,16 @@ export namespace Store {
 		keys?: K[] | ArrayIterator<K>;
 	};
 
-	export type Transaction<K extends unknown[] = any, V extends unknown = any> = Omit<Store<K, V>, "transaction">;
+	export type Transaction<K extends readonly unknown[] = any, V extends unknown = any> = Omit<
+		Store<K, V>,
+		"transaction"
+	>;
 }
 
-type KeyCodecs<K extends unknown[]> = { [I in keyof K]: Codec<K[I]> };
+type KeyCodecs<K extends readonly unknown[]> = { [I in keyof K]: Codec<K[I]> };
 
 export class Store<
-	K extends unknown[] = any,
+	const K extends readonly unknown[] = any,
 	V extends unknown = any,
 > {
 	private readonly database: Kysely<DB> | Transaction<DB>;
@@ -92,7 +95,7 @@ export class Store<
 		);
 		const rows = await query.execute();
 		return rows.map((row) => {
-			const key = this.keyCodecs.map((codec, i) => codec.decode(row[`key${i}`]!));
+			const key = this.keyCodecs.map((codec, i) => codec.decode(row[`key${i}`]!)) as never as K;
 			const value = this.valueCodec.decode(row.value);
 			return [key, value] as [K, V];
 		});

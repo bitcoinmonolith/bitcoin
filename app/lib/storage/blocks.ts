@@ -1,4 +1,4 @@
-import { bool, bytes, Codec, i32, Struct, Tuple, u32, u64, Vector } from "@nomadshiba/struct-js";
+import { bool, bytes, Codec, i32, Struct, Tuple, u16, u32, u64, Vector } from "@nomadshiba/struct-js";
 import { equals } from "@std/bytes";
 import { join } from "@std/path";
 import { bytesToHex } from "@noble/hashes/utils";
@@ -21,8 +21,8 @@ const BLOCKS_BASE_DIR = join(DATA_BASE_DIR, "blocks");
 
 type TxInData = Codec.Infer<typeof TxInData>;
 const TxInData = new Struct({
-	txBlockHeight: u24,
-	txIndex: u24,
+	utxoBlockHeight: u24,
+	utxoTxIndex: u24,
 	vout: u24,
 	sequence: u32,
 	scriptSig: bytes,
@@ -60,8 +60,8 @@ function coinbaseDataToTxData(coinbase: CoinbaseTxData): TxData {
 		version: coinbase.version,
 		lockTime: coinbase.lockTime,
 		vin: [{
-			txBlockHeight: 0,
-			txIndex: 0,
+			utxoBlockHeight: 0,
+			utxoTxIndex: 0,
 			vout: 0,
 			sequence: coinbase.sequence,
 			scriptSig: coinbase.coinbase,
@@ -84,7 +84,6 @@ type BlockData = Codec.Infer<typeof BlockData>;
 const BlockData = new Struct({
 	header: BlockHeaderData,
 	coinbase: CoinbaseTxData,
-	txs: new Vector(TxData),
 });
 
 type BlockRange = {
@@ -98,95 +97,119 @@ function getBlockRange(blockHeight: number): BlockRange {
 	return { start, end };
 }
 
-const cache = new WeakRefMap<string, Store<[number], BlockData>>();
+type LocalBlockKey = Tuple.Infer<typeof LocalBlockKey>;
+const LocalBlockKey = [u16] as const; // Local height within the chunk
+
+const blockStoreCache = new WeakRefMap<string, Store<LocalBlockKey, BlockData>>();
 function getBlockStore(range: BlockRange) {
-	const name = `blocks-${range.start}-${range.end}`;
-	let store = cache.get(name);
+	const name = `blocks[${range.start},${range.end}]`;
+	let store = blockStoreCache.get(name);
 	if (!store) {
-		store = new Store([u24], BlockData, {
-			base: BLOCKS_BASE_DIR,
-			name,
-		});
-		cache.set(name, store);
+		store = new Store(LocalBlockKey, BlockData, { base: BLOCKS_BASE_DIR, name });
+		blockStoreCache.set(name, store);
 	}
 	return store;
 }
 
-// TODO: Later make this multiple files based prefix
-const txIdIndexStore = new Store([bytes], new Tuple([u24, u32]), {
+type LocalTxKey = Tuple.Infer<typeof LocalTxKey>;
+const LocalTxKey = [u16, u24] as const; // Local block height within the chunk, tx index within the block
+
+const txStoreCache = new WeakRefMap<string, Store<LocalTxKey, TxData>>();
+function getTxStore(range: BlockRange) {
+	const name = `blocks[${range.start},${range.end}]-txs`;
+	let store = txStoreCache.get(name);
+	if (!store) {
+		store = new Store(LocalTxKey, TxData, { base: BLOCKS_BASE_DIR, name });
+		txStoreCache.set(name, store);
+	}
+	return store;
+}
+
+type TxKey = Tuple.Infer<typeof TxKey>;
+const TxKey = [u24, u24] as const;
+
+// TODO: Later make this multiple files based on prefix
+const txIdIndexStore = new Store([bytes], new Tuple(TxKey), {
 	base: DATA_BASE_DIR,
 	name: "txId-index",
 });
 
+async function getTx(...[blockHeight, txIndex]: TxKey): Promise<TxData | undefined> {
+	const blockRange = getBlockRange(blockHeight);
+	if (txIndex === 0) {
+		// Coinbase tx
+		const store = getBlockStore(blockRange);
+		const localHeight = blockHeight - blockRange.start;
+		const block = (await store.get([localHeight])).at(0);
+		return block ? coinbaseDataToTxData(block.coinbase) : undefined;
+	}
+	const store = getTxStore(blockRange);
+	const localHeight = blockHeight - blockRange.start;
+	return (await store.get([localHeight, txIndex])).at(0);
+}
+
 const TX_INDEX_PREFIX_STEP = 2;
 const TX_INDEX_MIN_PREFIX_LENGTH = 8;
-async function indexTxByTxId(tx: TxData, blockHeight: number, txIndex: number) {
+async function indexTxByTxId(tx: TxData, ...[blockHeight, txIndex]: TxKey) {
 	// Last prefix is the shortest one
 	const prefixes: [Uint8Array][] = [];
 	for (let length = tx.txId.length; length >= TX_INDEX_MIN_PREFIX_LENGTH; length -= TX_INDEX_PREFIX_STEP) {
 		prefixes.push([tx.txId.subarray(0, length)]);
 	}
 
-	await txIdIndexStore.transaction().execute(async (store) => {
-		const existingMatches = await store.getMany(prefixes);
-		if (existingMatches.length > 1) {
-			throw new Error("Unexpected multiple entries for txId prefixes, this should never happen");
-		}
-		const existingMatch = existingMatches[0];
+	const existingMatches = await txIdIndexStore.getMany(prefixes);
+	if (existingMatches.length > 1) {
+		console.error("Multiple existing matches for txId prefix:", {
+			blockHeight,
+			txIndex,
+			txId: bytesToHex(tx.txId.toReversed()),
+		});
+		throw new Error("Unexpected multiple entries for txId prefixes, this should never happen");
+	}
+	const existingMatch = existingMatches[0];
 
-		if (!existingMatch) {
-			// No collision, safe to add
-			await store.set(prefixes.at(-1)!, [blockHeight, txIndex]);
-			return;
-		}
+	if (!existingMatch) {
+		// No collision, safe to add
+		await txIdIndexStore.set(prefixes.at(-1)!, [blockHeight, txIndex]);
+		return;
+	} // Collision, need to resolve
 
-		const [existingPrefix, [existingBlockHeight, existingTxIndex]] = existingMatch;
-		if (existingBlockHeight === blockHeight && existingTxIndex === txIndex) {
-			// Same entry, nothing to do
-			return;
-		}
+	const [existingPrefix, [existingBlockHeight, existingTxIndex]] = existingMatch;
+	if (existingBlockHeight === blockHeight && existingTxIndex === txIndex) {
+		// Same entry, nothing to do
+		return;
+	}
 
-		// Collision detected, need to find the existing txId
-		const existingBlockRange = getBlockRange(existingBlockHeight);
-		const existingStore = getBlockStore(existingBlockRange);
-		const existingBlock = (await existingStore.get([existingBlockHeight - existingBlockRange.start])).at(0);
-		if (!existingBlock) {
-			throw new Error("Inconsistent state: existing block not found");
-		}
-		const existingTx = existingBlock.txs[existingTxIndex];
-		if (!existingTx) {
-			throw new Error("Inconsistent state: existing tx not found in block");
-		}
+	const existingTx = await getTx(existingBlockHeight, existingTxIndex);
+	if (!existingTx) {
+		console.error("Cannot find existing tx", { existingBlockHeight, existingTxIndex });
+		throw new Error("Inconsistent state: existing tx not found");
+	}
 
-		// Find the point where they differ
-		let diffIndex = 0;
-		while (tx.txId[diffIndex] === existingTx.txId[diffIndex]) {
-			diffIndex++;
-		}
+	// Find the point where they differ
+	let diffIndex = 0;
+	while (tx.txId[diffIndex] === existingTx.txId[diffIndex]) {
+		diffIndex++;
+	}
 
-		// Extend both prefixes to the next step after the differing byte
-		const newPrefixLength = Math.min(32, diffIndex + TX_INDEX_PREFIX_STEP);
-		const newPrefix = tx.txId.subarray(0, newPrefixLength);
-		const newExistingPrefix = existingTx.txId.subarray(0, newPrefixLength);
+	// Extend both prefixes to the next step after the differing byte
+	const newPrefixLength = Math.min(32, diffIndex + TX_INDEX_PREFIX_STEP);
+	const newPrefix = tx.txId.subarray(0, newPrefixLength);
+	const newExistingPrefix = existingTx.txId.subarray(0, newPrefixLength);
 
-		// Update the index with the new prefixes
-		await store.set([newPrefix], [blockHeight, txIndex]);
-		await store.set([newExistingPrefix], [existingBlockHeight, existingTxIndex]);
+	// Update the index with the new prefixes
+	await txIdIndexStore.set([newPrefix], [blockHeight, txIndex]);
+	await txIdIndexStore.set([newExistingPrefix], [existingBlockHeight, existingTxIndex]);
 
-		// Remove the old prefixes
-		await store.delete(existingPrefix);
-	});
+	// Remove the old prefixes
+	await txIdIndexStore.delete(existingPrefix);
 }
 
 type TxIndexResult = {
-	tx: TxData;
-	blockHeight: number;
-	txIndex: number;
+	key: TxKey;
+	data: TxData;
 };
-async function getTxByTxId(
-	txId: Uint8Array,
-	current: { block: Block; blockHeight: number },
-): Promise<TxIndexResult | undefined> {
+async function getTxByTxId(txId: Uint8Array): Promise<TxIndexResult | undefined> {
 	const prefixes: [Uint8Array][] = [];
 	for (let length = txId.length; length >= TX_INDEX_MIN_PREFIX_LENGTH; length -= TX_INDEX_PREFIX_STEP) {
 		prefixes.push([txId.subarray(0, length)]);
@@ -199,66 +222,29 @@ async function getTxByTxId(
 	if (!match) {
 		return undefined;
 	}
-	const [, [blockHeight, txIndex]] = match;
+	const [, key] = match;
 
-	// TODO: If tx is in the same block we are kinda having a little issues, have to fix this later.
-	if (current.blockHeight === blockHeight) {
-		const tx = current.block.txs[txIndex];
-		if (!tx) {
-			throw new Error("Inconsistent state: tx not found in current block");
-		}
-		const txIdMatch = equals(getTxId(tx), txId);
-		if (!txIdMatch) {
-			throw new Error("Inconsistent state: txId mismatch in current block");
-		}
-		const txData: TxData = {
-			txId: getTxId(tx),
-			version: tx.version,
-			lockTime: AbsoluteLock.encode(tx.lockTime),
-			vin: tx.vin.map((vinEntry): TxInData => ({
-				txBlockHeight: blockHeight, // Since we are in the same block
-				txIndex,
-				vout: vinEntry.vout,
-				sequence: SequenceLock.encode(vinEntry.sequenceLock),
-				scriptSig: vinEntry.scriptSig,
-			})),
-			vout: tx.vout.map((out) => ({
-				spent: false, // Placeholder, as we don't track spent status here
-				value: out.value,
-				scriptPubKey: out.scriptPubKey,
-			})),
-		};
-		return { tx: txData, blockHeight, txIndex };
+	const data = await getTx(...key);
+	if (!data) {
+		const [blockHeight, txIndex] = key;
+		console.error("Inconsistent state: txId index points to non-existing tx", { blockHeight, txIndex });
+		throw new Error("Inconsistent state: txId index points to non-existing tx");
 	}
 
-	const blockRange = getBlockRange(blockHeight);
-	const localHeight = blockHeight - blockRange.start;
-	const store = getBlockStore(blockRange);
-	const block = (await store.get([localHeight])).at(0);
-	if (!block) {
-		console.log("Cannot find block", { blockHeight, localHeight });
-		throw new Error("Inconsistent state: block not found");
-	}
-	const tx = txIndex ? block.txs[txIndex - 1] : coinbaseDataToTxData(block.coinbase);
-	if (!tx) {
-		console.log("Cannot find tx in block", { blockHeight, txIndex });
-		console.log("Existing txs in block:", block.txs.map((t) => bytesToHex(t.txId.toReversed())));
-		throw new Error("Inconsistent state: tx not found in block");
+	if (!equals(data.txId, txId)) {
+		return undefined; // Not the tx we are looking for
 	}
 
-	if (!equals(tx.txId, txId)) {
-		console.log("Mismatched txId", { expected: bytesToHex(txId), actual: bytesToHex(tx.txId) });
-		return undefined;
-	}
-	return { tx, blockHeight, txIndex };
+	return { key, data };
 }
 
 export async function saveBlock(blockHeight: number, block: Block) {
 	const range = getBlockRange(blockHeight);
-	const store = getBlockStore(range);
-	const localHeight = blockHeight - range.start;
+	const blockStore = getBlockStore(range);
+	const txStore = getTxStore(range);
 
-	const existing = (await store.get([localHeight])).at(0);
+	const localHeight = blockHeight - range.start;
+	const existing = (await blockStore.get([localHeight])).at(0);
 	if (existing) {
 		// Block already saved, nothing to do
 		return;
@@ -286,29 +272,33 @@ export async function saveBlock(blockHeight: number, block: Block) {
 			scriptPubKey: out.scriptPubKey,
 		})),
 	};
-	await indexTxByTxId(coinbaseDataToTxData(coinbase), blockHeight, 0);
+	const coinbaseTxData: TxData = coinbaseDataToTxData(coinbase);
+	await txStore.set([localHeight, 0], coinbaseTxData);
+	await indexTxByTxId(coinbaseTxData, blockHeight, 0);
 
-	const txs: TxData[] = [];
-	for (const tx of block.txs.values().drop(1)) {
+	for (const [txIndex, tx] of block.txs.entries().drop(1)) {
 		const txId = getTxId(tx);
 		const vin: TxInData[] = [];
 		for (const vinEntry of tx.vin) {
-			const txIndexResult = await getTxByTxId(vinEntry.txId, { block, blockHeight });
-			if (!txIndexResult) {
+			const utxoTx = await getTxByTxId(vinEntry.txId);
+			if (!utxoTx) {
 				console.log("Missing txId:", bytesToHex(vinEntry.txId.toReversed()));
 				throw new Error("Referenced UTXO transaction not found");
 			}
+			const { key: [utxoBlockHeight, utxoTxIndex] } = utxoTx;
+
+			// TODO: Verify that the output is not already spent
 
 			vin.push({
-				txBlockHeight: txIndexResult.blockHeight,
-				txIndex: txIndexResult.txIndex,
+				utxoBlockHeight,
+				utxoTxIndex,
 				vout: vinEntry.vout,
 				sequence: SequenceLock.encode(vinEntry.sequenceLock),
 				scriptSig: vinEntry.scriptSig,
 			});
 		}
 
-		const data: TxData = {
+		const txData: TxData = {
 			txId,
 			version: tx.version,
 			lockTime: AbsoluteLock.encode(tx.lockTime),
@@ -319,13 +309,12 @@ export async function saveBlock(blockHeight: number, block: Block) {
 				scriptPubKey: out.scriptPubKey,
 			})),
 		};
-		txs.push(data);
-		await indexTxByTxId(data, blockHeight, txs.length);
+
+		await txStore.set([localHeight, txIndex], txData);
+		await indexTxByTxId(txData, blockHeight, txIndex);
 	}
 
 	const { header } = block;
-
-	const data: BlockData = { header, coinbase, txs };
-
-	await store.set([localHeight], data);
+	const blockData: BlockData = { header, coinbase };
+	await blockStore.set([localHeight], blockData);
 }
