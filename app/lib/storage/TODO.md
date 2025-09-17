@@ -19,6 +19,8 @@ much at all. so i think this might be a good idea.
 
 Btw we still use our KV solution for indexes.
 
+Also it seems we need to store the full txid once per tx. otherwise while reconstructing tx vins, we have to rehash every tx until the utxo coinbase. 
+
 # Speed
 
 Ok this works. we can work on this more. Now we need some pooled queue pipe.
