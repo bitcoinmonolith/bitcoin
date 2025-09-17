@@ -39,3 +39,10 @@ So first we download the blocks, order doesnt really matter. but we download the
 The Next pipeline get them from previous pool that is indexed by previous block hash. And then:
 
 - We verify their POW.
+- We verify their timestamp.
+- We verify their difficulty target.
+- We verify their link to previous block.
+- We also verify txs and if they are double spends or not.
+- But we dont hash anything in this stage. this is the only sequential stage.
+
+Then we store them in the storage one by one.
