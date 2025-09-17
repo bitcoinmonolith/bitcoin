@@ -2,11 +2,11 @@ import { DB as Sqlite } from "@deno/sqlite";
 import { Codec } from "@nomadshiba/struct-js";
 import { DenoSqliteDialect } from "@soapbox/kysely-deno-sqlite";
 import { dirname, join } from "@std/path";
-import { Kysely, sql, Transaction } from "kysely";
+import { CompiledQuery, Kysely, Transaction } from "kysely";
 import { PartialTuple } from "./types.ts";
 import { bytesToHex, hexToBytes } from "@noble/hashes/utils";
 
-type KvSchema = { value: Uint8Array } & { [K in `key${number}`]: Uint8Array };
+type KvSchema = { v: Uint8Array } & { [K in `k${number}`]: Uint8Array };
 type DB = { kv: KvSchema };
 
 export namespace Store {
@@ -14,9 +14,10 @@ export namespace Store {
 		base: string;
 		name: string;
 	};
+	export type Transaction<K extends readonly any[] | any[] = any, V = any> = Omit<Store<K, V>, "transaction">;
 }
 
-type KeyCodecs<K extends readonly unknown[]> = { [I in keyof K]: Codec<K[I]> };
+type KeyCodecs<K extends readonly any[] | any[]> = { [I in keyof K]: Codec<K[I]> };
 
 function array<T>(value: T | T[] | undefined): T[] {
 	if (Array.isArray(value)) return value;
@@ -25,15 +26,16 @@ function array<T>(value: T | T[] | undefined): T[] {
 }
 
 export class Store<
-	const K extends readonly unknown[] = any,
-	V extends unknown = any,
+	const K extends readonly any[] | any[] = any,
+	V = any,
 > {
 	public readonly keyCodecs: KeyCodecs<K>;
 	public readonly valueCodec: Codec<V>;
 
-	private database: Kysely<DB> | Transaction<DB>;
+	private readonly database: Kysely<DB> | Transaction<DB>;
 	private memory: Map<string, V>;
 	private prefixes: Map<string, Set<string>>[];
+	private flushing: Promise<void>;
 
 	private encodeKey(key: PartialTuple<K>): string {
 		return key.map((k, i) => bytesToHex(this.keyCodecs[i]!.encode(k))).join(":");
@@ -50,22 +52,22 @@ export class Store<
 			dialect: new DenoSqliteDialect({
 				database: new Sqlite(filepath, { mode: "create" }),
 				async onCreateConnection(connection) {
+					await connection.executeQuery(CompiledQuery.raw("PRAGMA journal_mode = WAL;"));
+					await connection.executeQuery(CompiledQuery.raw("PRAGMA busy_timeout = 5000;"));
+					await connection.executeQuery(CompiledQuery.raw("PRAGMA synchronous = NORMAL;"));
+					await connection.executeQuery(CompiledQuery.raw("PRAGMA temp_store = MEMORY;"));
+					await connection.executeQuery(CompiledQuery.raw("PRAGMA mmap_size = 1073741824;"));
+					await connection.executeQuery(CompiledQuery.raw("PRAGMA cache_size = -131072;"));
+					await connection.executeQuery(CompiledQuery.raw("PRAGMA foreign_keys = OFF;"));
+					await connection.executeQuery(CompiledQuery.raw("PRAGMA locking_mode = EXCLUSIVE;"));
+
 					let query = database.schema.createTable("kv").ifNotExists();
 					for (const i of keyCodecs.keys()) {
-						query = query.addColumn(`key${i}`, "blob", (col) => col.notNull());
+						query = query.addColumn(`k${i}`, "blob", (col) => col.notNull());
 					}
-					query = query.addColumn("value", "blob", (col) => col.notNull());
-					query = query.addPrimaryKeyConstraint(
-						`pk_${options.name}`,
-						keyCodecs.map((_, i) => `key${i}`) as never,
-					);
+					query = query.addColumn("v", "blob", (col) => col.notNull());
+					query = query.addPrimaryKeyConstraint(`pk`, keyCodecs.map((_, i) => `k${i}`) as never);
 					await connection.executeQuery(query.compile());
-
-					await connection.executeQuery(sql`PRAGMA journal_mode = WAL`.compile(database)); // Better concurrency
-					await connection.executeQuery(sql`PRAGMA synchronous = NORMAL`.compile(database)); // Balance between performance and safety
-					await connection.executeQuery(sql`PRAGMA temp_store = MEMORY`.compile(database)); // Use memory for temp storage
-					await connection.executeQuery(sql`PRAGMA mmap_size = 1073741824`.compile(database)); // Use memory-mapped I/O up to 30GB
-					await connection.executeQuery(sql`PRAGMA cache_size = -64000`.compile(database)); // Use up to 64MB for page cache
 				},
 			}),
 		});
@@ -73,8 +75,9 @@ export class Store<
 
 		this.memory = new Map();
 		this.prefixes = keyCodecs.values().drop(1).map(() => new Map()).toArray();
+		this.flushing = Promise.resolve();
 
-		setInterval(() => this.flush(), 5_000);
+		setInterval(() => this.flushing = this.flushing.then(() => this.flush()), 5_000);
 	}
 
 	public async get(key: PartialTuple<K>): Promise<V[]> {
@@ -85,12 +88,12 @@ export class Store<
 				.filter((row) => row != null)
 				.toArray() ?? [];
 
-		let query = this.database.selectFrom("kv").select(["value"]);
+		let query = this.database.selectFrom("kv").select(["v"]);
 		for (const [i, k] of key.entries()) {
-			query = query.where(`key${i}`, "=", this.keyCodecs[i]!.encode(k));
+			query = query.where(`k${i}`, "=", this.keyCodecs[i]!.encode(k));
 		}
 		const rows = await query.execute();
-		return [...rows.map((row) => this.valueCodec.decode(row.value)), ...memoryRows];
+		return [...memoryRows, ...rows.map((row) => this.valueCodec.decode(row.v))];
 	}
 
 	public async getRaw(key: PartialTuple<K>): Promise<Uint8Array[]> {
@@ -103,18 +106,17 @@ export class Store<
 					.toArray() ?? []
 		).map((v) => this.valueCodec.encode(v!));
 
-		let query = this.database.selectFrom("kv").select(["value"]);
+		let query = this.database.selectFrom("kv").select(["v"]);
 		for (const [i, k] of key.entries()) {
-			query = query.where(`key${i}`, "=", this.keyCodecs[i]!.encode(k));
+			query = query.where(`k${i}`, "=", this.keyCodecs[i]!.encode(k));
 		}
 		const rows = await query.execute();
-		return [...rows.map((row) => row.value), ...memoryRows];
+		return [...memoryRows, ...rows.map((row) => row.v)];
 	}
 
-	public async getMany(keys: PartialTuple<K>[] | ArrayIterator<PartialTuple<K>>): Promise<[K, V][]> {
-		const keysArray = Array.isArray(keys) ? keys : Array.from(keys);
+	public async getMany(keys: PartialTuple<K>[]): Promise<[K, V][]> {
 		const memoryRows: [K, V][] = [];
-		for (const key of keysArray) {
+		for (const key of keys) {
 			if (key.length === this.keyCodecs.length) {
 				const value = this.memory.get(this.encodeKey(key));
 				if (value) memoryRows.push([key as K, value]);
@@ -130,25 +132,22 @@ export class Store<
 			}
 		}
 
-		let query = this.database.selectFrom("kv").select([
-			"value",
-			...this.keyCodecs.map((_, i) => `key${i}` as const),
-		]);
+		let query = this.database.selectFrom("kv").select(["v", ...this.keyCodecs.map((_, i) => `k${i}` as const)]);
 		query = query.where((eb) =>
-			eb.or(keysArray.map((key) => eb.and(key.map((k, i) => eb(`key${i}`, "=", this.keyCodecs[i]!.encode(k))))))
+			eb.or(keys.map((key) => eb.and(key.map((k, i) => eb(`k${i}`, "=", this.keyCodecs[i]!.encode(k))))))
 		);
 		const rows = await query.execute();
 		return [
+			...memoryRows,
 			...rows.map((row) => {
-				const key = this.keyCodecs.map((codec, i) => codec.decode(row[`key${i}`]!)) as never as K;
-				const value = this.valueCodec.decode(row.value);
+				const key = this.keyCodecs.map((codec, i) => codec.decode(row[`k${i}`]!)) as never as K;
+				const value = this.valueCodec.decode(row.v);
 				return [key, value] as [K, V];
 			}),
-			...memoryRows,
 		];
 	}
 
-	public async set(key: K, value: V): Promise<void> {
+	public set(key: K, value: V): void {
 		const encodedKey = this.encodeKey(key);
 		this.memory.set(encodedKey, value);
 		for (let i = 0; i < key.length - 1; i++) {
@@ -163,47 +162,30 @@ export class Store<
 	}
 
 	public async delete(key: PartialTuple<K>): Promise<void> {
+		await this.flushing;
+
 		let query = this.database.deleteFrom("kv");
 		for (const [i, k] of key.entries()) {
-			query = query.where(`key${i}`, "=", this.keyCodecs[i]!.encode(k));
+			query = query.where(`k${i}`, "=", this.keyCodecs[i]!.encode(k));
 		}
 		await query.execute();
+
 		if (key.length === this.keyCodecs.length) {
 			const encodedKey = this.encodeKey(key as K);
 			this.memory.delete(encodedKey);
-			for (let i = 0; i < key.length - 1; i++) {
-				const prefix = this.encodeKey(key.slice(0, i + 1) as never);
-				const set = this.prefixes[i]!.get(prefix);
-				if (set) {
-					set.delete(encodedKey);
-					if (set.size === 0) this.prefixes[i]!.delete(prefix);
-				}
-			}
 		} else {
 			const prefix = this.encodeKey(key);
-			const fullKeys = this.prefixes[key.length - 1]!.get(prefix) ?? [];
-			for (const fullKey of fullKeys) {
-				this.memory.delete(fullKey);
-				const fullKeyParts = fullKey.split(":").map((part, i) =>
-					this.keyCodecs[i]!.decode(hexToBytes(part))
-				) as never as K;
-				for (let i = 0; i < fullKeyParts.length - 1; i++) {
-					const p = this.encodeKey(fullKeyParts.slice(0, i + 1) as never);
-					const set = this.prefixes[i]!.get(p);
-					if (set) {
-						set.delete(fullKey);
-						if (set.size === 0) this.prefixes[i]!.delete(p);
-					}
-				}
+			const keys = this.prefixes[key.length - 1]!.get(prefix) ?? [];
+			for (const key of keys) {
+				this.memory.delete(key);
 			}
-			this.prefixes[key.length - 1]!.delete(prefix);
 		}
 	}
 
 	public async clear(): Promise<void> {
-		await this.database.deleteFrom("kv").execute();
 		this.memory.clear();
 		this.prefixes.forEach((map) => map.clear());
+		await this.database.deleteFrom("kv").execute();
 	}
 
 	public async flush(): Promise<void> {
@@ -216,16 +198,16 @@ export class Store<
 			const chunk = entries.splice(0, 1000);
 			const query = this.database.insertInto("kv").values(
 				chunk.map(([encodedKey, value]) => {
-					const values: any = { value: this.valueCodec.encode(value) };
+					const values: any = { v: this.valueCodec.encode(value) };
 					const keyParts = encodedKey.split(":");
 					for (let i = 0; i < this.keyCodecs.length; i++) {
-						values[`key${i}`] = hexToBytes(keyParts[i]!);
+						values[`k${i}`] = hexToBytes(keyParts[i]!);
 					}
 					return values;
 				}),
 			).onConflict((oc) =>
-				oc.columns(this.keyCodecs.keys().map((i) => `key${i}` as const).toArray())
-					.doUpdateSet({ value: (eb) => eb.ref("excluded.value") })
+				oc.columns(this.keyCodecs.keys().map((i) => `k${i}` as const).toArray())
+					.doUpdateSet({ v: (eb) => eb.ref("excluded.v") })
 			);
 
 			await query.execute();

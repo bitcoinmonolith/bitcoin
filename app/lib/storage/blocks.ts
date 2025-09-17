@@ -1,7 +1,7 @@
+import { bytesToHex } from "@noble/hashes/utils";
 import { bool, bytes, Codec, i32, Struct, Tuple, u16, u32, u64, Vector } from "@nomadshiba/struct-js";
 import { equals } from "@std/bytes";
 import { join } from "@std/path";
-import { bytesToHex } from "@noble/hashes/utils";
 import { DATA_BASE_DIR } from "~/lib/constants.ts";
 import { Block } from "~/lib/primitives/Block.ts";
 import { bytes32 } from "~/lib/primitives/Bytes32.ts";
@@ -10,11 +10,16 @@ import { u24 } from "~/lib/primitives/U24.ts";
 import { Store } from "~/lib/Store.ts";
 import { AbsoluteLock } from "~/lib/weirdness/AbsoluteLock.ts";
 import { SequenceLock } from "~/lib/weirdness/SequenceLock.ts";
-import { WeakRefMap } from "../WeakRefMap.ts";
 
-// TODO: Right now we are using index ids to point to outputs in a tx, or txs in a block.
-// But later we should directly point to the byte offset in the block.
-// So we dont have to decode the whole block to read a single tx or tx output.
+/*
+BIP-30 nTime > 1331769600
+no block is valid if it contains a txid that already exists, unless the old one is fully spent.
+
+after block 227,835 (March 2013, when BIP-34 hit), coinbase uniqueness is enforced by block height, so this never repeats.
+*/
+
+const BIP_30_ENFORCEMENT_TIME = 1331769600;
+const BIP_34_ENFORCEMENT_HEIGHT = 227835;
 
 const BLOCKS_PER_CHUNK = 12_500; // About 20GB per chunk with modern blocks
 const BLOCKS_BASE_DIR = join(DATA_BASE_DIR, "blocks");
@@ -96,32 +101,46 @@ function getBlockRange(blockHeight: number): BlockRange {
 	return { start, end };
 }
 
-type LocalBlockKey = Tuple.Infer<typeof LocalBlockKey>;
-const LocalBlockKey = [u16] as const; // Local height within the chunk
-
-const blockStoreCache = new WeakRefMap<string, Store<LocalBlockKey, BlockData>>();
-function getBlockStore(range: BlockRange) {
-	const name = `blocks[${range.start},${range.end}]`;
-	let store = blockStoreCache.get(name);
-	if (!store) {
-		store = new Store(LocalBlockKey, BlockData, { base: BLOCKS_BASE_DIR, name });
-		blockStoreCache.set(name, store);
-	}
-	return store;
-}
+export type Infer<T extends Codec<any>[]> = {
+	[K in keyof T]: Codec.Infer<T[K]>;
+};
 
 type LocalTxKey = Tuple.Infer<typeof LocalTxKey>;
 const LocalTxKey = [u16, u24] as const; // Local block height within the chunk, tx index within the block
 
-const txStoreCache = new WeakRefMap<string, Store<LocalTxKey, TxData>>();
+const txStoreCache: Store<LocalTxKey, TxData>[] = [];
 function getTxStore(range: BlockRange) {
 	const name = `blocks[${range.start},${range.end}]-txs`;
-	let store = txStoreCache.get(name);
+	const index = range.start / BLOCKS_PER_CHUNK;
+	let store = txStoreCache[index];
 	if (!store) {
 		store = new Store(LocalTxKey, TxData, { base: BLOCKS_BASE_DIR, name });
-		txStoreCache.set(name, store);
+		txStoreCache[index] = store;
 	}
 	return store;
+}
+
+type LocalBlockKey = Tuple.Infer<typeof LocalBlockKey>;
+const LocalBlockKey = [u16] as const; // Local height within the chunk
+
+const blockStoreCache: Store<LocalBlockKey, BlockData>[] = [];
+function getBlockStore(range: BlockRange) {
+	const name = `blocks[${range.start},${range.end}]`;
+	const index = range.start / BLOCKS_PER_CHUNK;
+	let store = blockStoreCache[index];
+	if (!store) {
+		store = new Store(LocalBlockKey, BlockData, { base: BLOCKS_BASE_DIR, name });
+		blockStoreCache[index] = store;
+	}
+	return store;
+}
+
+export async function getBlock(blockHeight: number): Promise<BlockData | undefined> {
+	const range = getBlockRange(blockHeight);
+	const store = getBlockStore(range);
+	const localHeight = blockHeight - range.start;
+	const res = await store.get([localHeight]);
+	return res.at(0);
 }
 
 type TxKey = Tuple.Infer<typeof TxKey>;
@@ -169,7 +188,7 @@ async function indexTxByTxId(tx: TxData, ...[blockHeight, txIndex]: TxKey) {
 
 	if (!existingMatch) {
 		// No collision, safe to add
-		await txIdIndexStore.set(prefixes.at(-1)!, [blockHeight, txIndex]);
+		txIdIndexStore.set(prefixes.at(-1)!, [blockHeight, txIndex]);
 		return;
 	} // Collision, need to resolve
 
@@ -185,23 +204,52 @@ async function indexTxByTxId(tx: TxData, ...[blockHeight, txIndex]: TxKey) {
 		throw new Error("Inconsistent state: existing tx not found");
 	}
 
+	const existingPrefixLength = existingPrefix[0].byteLength;
+
 	// Find the point where they differ
-	let diffIndex = 0;
-	while (tx.txId[diffIndex] === existingTx.txId[diffIndex]) {
+	let diffIndex = existingPrefixLength;
+	while (diffIndex < 32 && tx.txId[diffIndex] === existingTx.txId[diffIndex]) {
 		diffIndex++;
 	}
 
-	// Extend both prefixes to the next step after the differing byte
-	const newPrefixLength = Math.min(32, diffIndex + TX_INDEX_PREFIX_STEP);
-	const newPrefix = tx.txId.subarray(0, newPrefixLength);
-	const newExistingPrefix = existingTx.txId.subarray(0, newPrefixLength);
+	if (diffIndex === 32) {
+		console.log(
+			`TxId`,
+			bytesToHex(tx.txId.toReversed()),
+			`exists both at ${blockHeight}:${txIndex} and ${existingBlockHeight}:${existingTxIndex}`,
+		);
+
+		console.log("This might be a BIP-30 violation, checking block timestamp for activation...");
+		const block = await getBlock(blockHeight);
+		if (!block) {
+			console.error("Cannot find block for new tx", { blockHeight });
+			throw new Error("Inconsistent state: block for new tx not found");
+		}
+
+		if (block.header.timestamp >= BIP_30_ENFORCEMENT_TIME) {
+			console.error("Acting accordingly to BIP-30 and rejecting the new transaction");
+			throw new Error("BIP-30: transaction with duplicate txId");
+		}
+
+		console.log("BIP-30 not active yet, accepting the new transaction");
+		console.log("This will overwrite the existing transaction in the index");
+
+		txIdIndexStore.set(existingPrefix, [blockHeight, txIndex]);
+		return;
+	}
+
+	// Remove the old length prefix from the index
+	await txIdIndexStore.delete(existingPrefix);
+
+	const newPrefixLength = TX_INDEX_MIN_PREFIX_LENGTH +
+		Math.ceil((diffIndex + 1 - TX_INDEX_MIN_PREFIX_LENGTH) / TX_INDEX_PREFIX_STEP) *
+			TX_INDEX_PREFIX_STEP;
 
 	// Update the index with the new prefixes
-	await txIdIndexStore.set([newPrefix], [blockHeight, txIndex]);
-	await txIdIndexStore.set([newExistingPrefix], [existingBlockHeight, existingTxIndex]);
-
-	// Remove the old prefixes
-	await txIdIndexStore.delete(existingPrefix);
+	const newPrefix = tx.txId.subarray(0, newPrefixLength);
+	txIdIndexStore.set([newPrefix], [blockHeight, txIndex]);
+	const newExistingPrefix = existingTx.txId.subarray(0, newPrefixLength);
+	txIdIndexStore.set([newExistingPrefix], [existingBlockHeight, existingTxIndex]);
 }
 
 type TxIndexResult = {
@@ -266,8 +314,14 @@ export async function saveBlock(blockHeight: number, block: Block) {
 			scriptPubKey: out.scriptPubKey,
 		})),
 	};
+
+	// Blocks are stored first because txs might try to read the block.
+	const { header } = block;
+	const blockData: BlockData = { header, coinbase };
+	blockStore.set([localHeight], blockData);
+
 	const coinbaseTxData: TxData = coinbaseDataToTxData(coinbase);
-	await txStore.set([localHeight, 0], coinbaseTxData);
+	txStore.set([localHeight, 0], coinbaseTxData);
 	await indexTxByTxId(coinbaseTxData, blockHeight, 0);
 
 	for (const [txIndex, tx] of block.txs.entries().drop(1)) {
@@ -306,11 +360,7 @@ export async function saveBlock(blockHeight: number, block: Block) {
 			})),
 		};
 
-		await txStore.set([localHeight, txIndex], txData);
+		txStore.set([localHeight, txIndex], txData);
 		await indexTxByTxId(txData, blockHeight, txIndex);
 	}
-
-	const { header } = block;
-	const blockData: BlockData = { header, coinbase };
-	await blockStore.set([localHeight], blockData);
 }
