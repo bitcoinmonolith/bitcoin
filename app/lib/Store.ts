@@ -1,23 +1,24 @@
 import { DB as Sqlite } from "@deno/sqlite";
+import { bytesToHex, hexToBytes } from "@noble/hashes/utils";
 import { Codec } from "@nomadshiba/struct-js";
 import { DenoSqliteDialect } from "@soapbox/kysely-deno-sqlite";
 import { dirname, join } from "@std/path";
 import { CompiledQuery, Kysely, Transaction } from "kysely";
 import { PartialTuple } from "./types.ts";
-import { bytesToHex, hexToBytes } from "@noble/hashes/utils";
 
 type KvSchema = { v: Uint8Array } & { [K in `k${number}`]: Uint8Array };
 type DB = { kv: KvSchema };
 
-export namespace Store {
-	export type ConnectOptions = {
-		base: string;
-		name: string;
-	};
-	export type Transaction<K extends readonly any[] | any[] = any, V = any> = Omit<Store<K, V>, "transaction">;
-}
+type Key = readonly [unknown, ...unknown[]];
+type Value = unknown;
 
-type KeyCodecs<K extends readonly any[] | any[]> = { [I in keyof K]: Codec<K[I]> };
+export namespace Store {
+	export type ConnectOptions = { base: string; name: string };
+	export type Transaction<
+		K extends Key = Key,
+		V extends Value = Value,
+	> = Omit<Store<K, V>, "transaction">;
+}
 
 function array<T>(value: T | T[] | undefined): T[] {
 	if (Array.isArray(value)) return value;
@@ -25,12 +26,16 @@ function array<T>(value: T | T[] | undefined): T[] {
 	return [value];
 }
 
+type KCodec<K extends Key> =
+	| { readonly [I in keyof K]: Codec<K[I]> }
+	| { -readonly [I in keyof K]: Codec<K[I]> };
+
 export class Store<
-	const K extends readonly any[] | any[] = any,
-	V = any,
+	const K extends Key = Key,
+	V extends Value = Value,
 > {
-	public readonly keyCodecs: KeyCodecs<K>;
-	public readonly valueCodec: Codec<V>;
+	public readonly kCodec: KCodec<K>;
+	public readonly vCodec: Codec<V>;
 
 	private readonly database: Kysely<DB> | Transaction<DB>;
 	private memory: Map<string, V>;
@@ -38,12 +43,12 @@ export class Store<
 	private flushing: Promise<void>;
 
 	private encodeKey(key: PartialTuple<K>): string {
-		return key.map((k, i) => bytesToHex(this.keyCodecs[i]!.encode(k))).join(":");
+		return key.map((k, i) => bytesToHex(this.kCodec[i]!.encode(k))).join(":");
 	}
 
-	constructor(keyCodecs: KeyCodecs<K>, valueCodec: Codec<V>, options: Store.ConnectOptions) {
-		this.keyCodecs = keyCodecs;
-		this.valueCodec = valueCodec;
+	constructor(kCodec: KCodec<K>, vCodec: Codec<V>, options: Store.ConnectOptions) {
+		this.kCodec = kCodec;
+		this.vCodec = vCodec;
 
 		const filepath = join(options.base, `${options.name}.sqlite3`);
 		Deno.mkdirSync(dirname(filepath), { recursive: true });
@@ -62,11 +67,11 @@ export class Store<
 					await connection.executeQuery(CompiledQuery.raw("PRAGMA locking_mode = EXCLUSIVE;"));
 
 					let query = database.schema.createTable("kv").ifNotExists();
-					for (const i of keyCodecs.keys()) {
+					for (const i of kCodec.keys()) {
 						query = query.addColumn(`k${i}`, "blob", (col) => col.notNull());
 					}
 					query = query.addColumn("v", "blob", (col) => col.notNull());
-					query = query.addPrimaryKeyConstraint(`pk`, keyCodecs.map((_, i) => `k${i}`) as never);
+					query = query.addPrimaryKeyConstraint(`pk`, kCodec.map((_, i) => `k${i}`) as never);
 					await connection.executeQuery(query.compile());
 				},
 			}),
@@ -74,14 +79,14 @@ export class Store<
 		new FinalizationRegistry((database: Kysely<DB>) => database.destroy()).register(this, database);
 
 		this.memory = new Map();
-		this.prefixes = keyCodecs.values().drop(1).map(() => new Map()).toArray();
+		this.prefixes = kCodec.values().drop(1).map(() => new Map()).toArray();
 		this.flushing = Promise.resolve();
 
 		setInterval(() => this.flushing = this.flushing.then(() => this.flush()), 5_000);
 	}
 
 	public async get(key: PartialTuple<K>): Promise<V[]> {
-		const memoryRows = key.length === this.keyCodecs.length
+		const memoryRows = key.length === this.kCodec.length
 			? array(this.memory.get(this.encodeKey(key)))
 			: this.prefixes[key.length - 1]!.get(this.encodeKey(key))?.values()
 				.map((key) => this.memory.get(key))
@@ -90,25 +95,25 @@ export class Store<
 
 		let query = this.database.selectFrom("kv").select(["v"]);
 		for (const [i, k] of key.entries()) {
-			query = query.where(`k${i}`, "=", this.keyCodecs[i]!.encode(k));
+			query = query.where(`k${i}`, "=", this.kCodec[i]!.encode(k));
 		}
 		const rows = await query.execute();
-		return [...memoryRows, ...rows.map((row) => this.valueCodec.decode(row.v))];
+		return [...memoryRows, ...rows.map((row) => this.vCodec.decode(row.v))];
 	}
 
 	public async getRaw(key: PartialTuple<K>): Promise<Uint8Array[]> {
 		const memoryRows = (
-			key.length === this.keyCodecs.length
+			key.length === this.kCodec.length
 				? array(this.memory.get(this.encodeKey(key)))
 				: this.prefixes[key.length - 1]!.get(this.encodeKey(key))?.values()
 					.map((key) => this.memory.get(key))
 					.filter((row) => row != null)
 					.toArray() ?? []
-		).map((v) => this.valueCodec.encode(v!));
+		).map((v) => this.vCodec.encode(v!));
 
 		let query = this.database.selectFrom("kv").select(["v"]);
 		for (const [i, k] of key.entries()) {
-			query = query.where(`k${i}`, "=", this.keyCodecs[i]!.encode(k));
+			query = query.where(`k${i}`, "=", this.kCodec[i]!.encode(k));
 		}
 		const rows = await query.execute();
 		return [...memoryRows, ...rows.map((row) => row.v)];
@@ -117,7 +122,7 @@ export class Store<
 	public async getMany(keys: PartialTuple<K>[]): Promise<[K, V][]> {
 		const memoryRows: [K, V][] = [];
 		for (const key of keys) {
-			if (key.length === this.keyCodecs.length) {
+			if (key.length === this.kCodec.length) {
 				const value = this.memory.get(this.encodeKey(key));
 				if (value) memoryRows.push([key as K, value]);
 			} else {
@@ -125,23 +130,23 @@ export class Store<
 				for (const fullKey of fullKeys) {
 					const value = this.memory.get(fullKey)!;
 					const fullKeyParts = fullKey.split(":").map((part, i) =>
-						this.keyCodecs[i]!.decode(hexToBytes(part))
+						this.kCodec[i]!.decode(hexToBytes(part))
 					) as never as K;
 					memoryRows.push([fullKeyParts, value]);
 				}
 			}
 		}
 
-		let query = this.database.selectFrom("kv").select(["v", ...this.keyCodecs.map((_, i) => `k${i}` as const)]);
+		let query = this.database.selectFrom("kv").select(["v", ...this.kCodec.map((_, i) => `k${i}` as const)]);
 		query = query.where((eb) =>
-			eb.or(keys.map((key) => eb.and(key.map((k, i) => eb(`k${i}`, "=", this.keyCodecs[i]!.encode(k))))))
+			eb.or(keys.map((key) => eb.and(key.map((k, i) => eb(`k${i}`, "=", this.kCodec[i]!.encode(k))))))
 		);
 		const rows = await query.execute();
 		return [
 			...memoryRows,
 			...rows.map((row) => {
-				const key = this.keyCodecs.map((codec, i) => codec.decode(row[`k${i}`]!)) as never as K;
-				const value = this.valueCodec.decode(row.v);
+				const key = this.kCodec.map((codec, i) => codec.decode(row[`k${i}`]!)) as never as K;
+				const value = this.vCodec.decode(row.v);
 				return [key, value] as [K, V];
 			}),
 		];
@@ -166,11 +171,11 @@ export class Store<
 
 		let query = this.database.deleteFrom("kv");
 		for (const [i, k] of key.entries()) {
-			query = query.where(`k${i}`, "=", this.keyCodecs[i]!.encode(k));
+			query = query.where(`k${i}`, "=", this.kCodec[i]!.encode(k));
 		}
 		await query.execute();
 
-		if (key.length === this.keyCodecs.length) {
+		if (key.length === this.kCodec.length) {
 			const encodedKey = this.encodeKey(key as K);
 			this.memory.delete(encodedKey);
 		} else {
@@ -198,15 +203,15 @@ export class Store<
 			const chunk = entries.splice(0, 1000);
 			const query = this.database.insertInto("kv").values(
 				chunk.map(([encodedKey, value]) => {
-					const values: any = { v: this.valueCodec.encode(value) };
+					const values: any = { v: this.vCodec.encode(value) };
 					const keyParts = encodedKey.split(":");
-					for (let i = 0; i < this.keyCodecs.length; i++) {
+					for (let i = 0; i < this.kCodec.length; i++) {
 						values[`k${i}`] = hexToBytes(keyParts[i]!);
 					}
 					return values;
 				}),
 			).onConflict((oc) =>
-				oc.columns(this.keyCodecs.keys().map((i) => `k${i}` as const).toArray())
+				oc.columns(this.kCodec.keys().map((i) => `k${i}` as const).toArray())
 					.doUpdateSet({ v: (eb) => eb.ref("excluded.v") })
 			);
 

@@ -1,7 +1,7 @@
 import { resolve } from "@std/path";
 import { hexToBytes } from "@noble/hashes/utils";
 
-export const DATA_BASE_DIR = resolve("./data");
+export const BASE_DATA_DIR = resolve("./data");
 
 export const MAX_BLOCK_BYTES = 4 * 1024 * 1024; // 4 MiB
 

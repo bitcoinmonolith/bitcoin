@@ -179,7 +179,7 @@ export class Peer {
 	}
 
 	log(...params: unknown[]) {
-		console.log(`${this.host}:${this.port}`, "→", ...params);
+		// console.log(`${this.host}:${this.port}`, "→", ...params);
 	}
 	logError(...params: unknown[]) {
 		console.error(`${this.host}:${this.port}`, "→", ...params);

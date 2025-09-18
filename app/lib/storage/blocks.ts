@@ -2,7 +2,7 @@ import { bytesToHex } from "@noble/hashes/utils";
 import { bool, bytes, Codec, i32, Struct, Tuple, u16, u32, u64, Vector } from "@nomadshiba/struct-js";
 import { equals } from "@std/bytes";
 import { join } from "@std/path";
-import { DATA_BASE_DIR } from "~/lib/constants.ts";
+import { BASE_DATA_DIR } from "~/lib/constants.ts";
 import { Block } from "~/lib/primitives/Block.ts";
 import { bytes32 } from "~/lib/primitives/Bytes32.ts";
 import { getTxId } from "~/lib/primitives/Tx.ts";
@@ -22,7 +22,7 @@ const BIP_30_ENFORCEMENT_TIME = 1331769600;
 const BIP_34_ENFORCEMENT_HEIGHT = 227835;
 
 const BLOCKS_PER_CHUNK = 12_500; // About 20GB per chunk with modern blocks
-const BLOCKS_BASE_DIR = join(DATA_BASE_DIR, "blocks");
+const BLOCKS_BASE_DIR = join(BASE_DATA_DIR, "blocks");
 
 type TxInData = Codec.Infer<typeof TxInData>;
 const TxInData = new Struct({
@@ -144,7 +144,7 @@ const TxKey = [u24, u24] as const;
 
 // TODO: Later make this multiple files based on prefix
 const txIdIndexStore = new Store([bytes], new Tuple(TxKey), {
-	base: DATA_BASE_DIR,
+	base: BASE_DATA_DIR,
 	name: "txId-index",
 });
 
