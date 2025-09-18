@@ -101,10 +101,6 @@ function getBlockRange(blockHeight: number): BlockRange {
 	return { start, end };
 }
 
-export type Infer<T extends Codec<any>[]> = {
-	[K in keyof T]: Codec.Infer<T[K]>;
-};
-
 type LocalTxKey = Tuple.Infer<typeof LocalTxKey>;
 const LocalTxKey = [u16, u24] as const; // Local block height within the chunk, tx index within the block
 

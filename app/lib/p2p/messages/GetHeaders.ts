@@ -4,7 +4,7 @@ import { PeerMessage } from "~/lib/p2p/PeerMessage.ts";
 
 export type GetHeadersMessage = {
 	version: number;
-	hashes: Uint8Array[]; // block locator hashes
+	locators: Uint8Array[]; // block locator hashes
 	stopHash: Uint8Array;
 };
 
@@ -12,7 +12,7 @@ export class GetHeadersMessageCodec extends Codec<GetHeadersMessage> {
 	public readonly stride = -1;
 
 	public encode(data: GetHeadersMessage): Uint8Array {
-		const count = data.hashes.length;
+		const count = data.locators.length;
 		const bytes = new Uint8Array(4 + 1 + 32 * count + 32);
 		const view = new BytesView(bytes);
 
@@ -28,7 +28,7 @@ export class GetHeadersMessageCodec extends Codec<GetHeadersMessage> {
 
 		view.setUint8(offset++, count);
 
-		for (const hash of data.hashes) {
+		for (const hash of data.locators) {
 			if (hash.byteLength !== 32) throw new Error("Invalid hash length in locator");
 			bytes.set(hash, offset);
 			offset += hash.byteLength;
@@ -62,7 +62,7 @@ export class GetHeadersMessageCodec extends Codec<GetHeadersMessage> {
 		const stopHash = bytes.subarray(offset, offset + 32);
 		offset += 32;
 
-		return { version, hashes, stopHash };
+		return { version, locators: hashes, stopHash };
 	}
 }
 

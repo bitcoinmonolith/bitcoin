@@ -96,7 +96,7 @@ async function sync(peer: Peer) {
 	// step 1: ask headers
 	await peer.send(GetHeadersMessage, {
 		version: version.version,
-		hashes: [bestHash], // simple locator for now
+		locators: [bestHash], // simple locator for now
 		stopHash: new Uint8Array(32),
 	});
 
