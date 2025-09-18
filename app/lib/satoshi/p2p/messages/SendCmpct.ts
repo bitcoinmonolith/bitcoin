@@ -1,6 +1,6 @@
 import { Codec } from "@nomadshiba/struct-js";
 import { BytesView } from "~/lib/BytesView.ts";
-import { PeerMessage } from "~/lib/p2p/PeerMessage.ts";
+import { PeerMessage } from "~/lib/satoshi/p2p/PeerMessage.ts";
 
 export type SendCmpctMessage = {
 	announce: boolean;

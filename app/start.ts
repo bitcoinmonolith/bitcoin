@@ -1,22 +1,22 @@
 import { bytesToHex, hexToBytes } from "@noble/hashes/utils";
 import { equals } from "@std/bytes";
 import { Bitcoin } from "~/Bitcoin.ts";
-import { GetHeadersHandler } from "~/lib/p2p/handlers/GetHeadersHandler.ts";
-import { InvHandler } from "~/lib/p2p/handlers/InvHandler.ts";
-import { ping, PingHandler } from "~/lib/p2p/handlers/PingHandler.ts";
-import { SendCmpctHandler } from "~/lib/p2p/handlers/SendCmpctHandler.ts";
-import { handshake, VersionHandler } from "~/lib/p2p/handlers/VersionHandler.ts";
-import { BlockMessage } from "~/lib/p2p/messages/Block.ts";
-import { GetDataMessage } from "~/lib/p2p/messages/GetData.ts";
-import { VersionMessage } from "~/lib/p2p/messages/Version.ts";
-import { Peer } from "~/lib/p2p/Peer.ts";
-import { GENESIS_BLOCK_HASH } from "./lib/constants.ts";
-import { GetHeadersMessage } from "./lib/p2p/messages/GetHeaders.ts";
-import { HeadersMessage } from "./lib/p2p/messages/Headers.ts";
-import { getBlockHash } from "./lib/primitives/BlockHeader.ts";
-import { getTxId } from "./lib/primitives/Tx.ts";
-import { computeSatoshiMerkleRoot } from "./lib/satoshi/merkle.ts";
-import { saveBlock } from "./lib/storage/blocks.ts";
+import { GetHeadersHandler } from "~/lib/satoshi/p2p/handlers/GetHeadersHandler.ts";
+import { InvHandler } from "~/lib/satoshi/p2p/handlers/InvHandler.ts";
+import { ping, PingHandler } from "~/lib/satoshi/p2p/handlers/PingHandler.ts";
+import { SendCmpctHandler } from "~/lib/satoshi/p2p/handlers/SendCmpctHandler.ts";
+import { handshake, VersionHandler } from "~/lib/satoshi/p2p/handlers/VersionHandler.ts";
+import { BlockMessage } from "~/lib/satoshi/p2p/messages/Block.ts";
+import { GetDataMessage } from "~/lib/satoshi/p2p/messages/GetData.ts";
+import { VersionMessage } from "~/lib/satoshi/p2p/messages/Version.ts";
+import { Peer } from "~/lib/satoshi/p2p/Peer.ts";
+import { GENESIS_BLOCK_HASH } from "~/lib/constants.ts";
+import { GetHeadersMessage } from "~/lib/satoshi/p2p/messages/GetHeaders.ts";
+import { HeadersMessage } from "~/lib/satoshi/p2p/messages/Headers.ts";
+import { getBlockHash } from "~/lib/primitives/BlockHeader.ts";
+import { getTxId } from "~/lib/primitives/Tx.ts";
+import { computeSatoshiMerkleRoot } from "~/lib/satoshi/crypto/merkle.ts";
+import { saveBlock } from "~/lib/storage/blocks.ts";
 
 const NETWORK_MAGIC = hexToBytes("f9beb4d9"); // Mainnet
 /* const NETWORK_MAGIC = hexToBytes("0b110907"); // Testnet

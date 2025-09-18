@@ -1,5 +1,5 @@
 import { Bitcoin } from "~/Bitcoin.ts";
-import { SendCmpctMessage } from "~/lib/p2p/messages/SendCmpct.ts";
+import { SendCmpctMessage } from "~/lib/satoshi/p2p/messages/SendCmpct.ts";
 
 export const SendCmpctHandler: Bitcoin.MessageHandler<SendCmpctMessage> = {
 	message: SendCmpctMessage,

@@ -2,15 +2,15 @@ import { Codec } from "@nomadshiba/struct-js";
 import { concat } from "@std/bytes";
 import { CompactSize } from "~/lib/CompactSize.ts";
 import { BytesView } from "~/lib/BytesView.ts";
-import { SequenceLock } from "~/lib/weirdness/SequenceLock.ts";
-import { AbsoluteLock } from "~/lib/weirdness/AbsoluteLock.ts";
+import { SequenceLock } from "~/lib/primitives/weirdness/SequenceLock.ts";
+import { TimeLock } from "~/lib/primitives/weirdness/TimeLock.ts";
 import { sha256 } from "@noble/hashes/sha2";
 
 export type Tx = Readonly<{
 	version: number;
 	vin: TxIn[];
 	vout: TxOut[];
-	lockTime: AbsoluteLock;
+	lockTime: TimeLock;
 	witness: boolean;
 }>;
 
@@ -85,7 +85,7 @@ export class TxCodec extends Codec<Tx> {
 
 		// locktime (uint32 LE)
 		const lockBuf = new Uint8Array(4);
-		new BytesView(lockBuf).setUint32(0, AbsoluteLock.encode(tx.lockTime), true);
+		new BytesView(lockBuf).setUint32(0, TimeLock.encode(tx.lockTime), true);
 		chunks.push(lockBuf);
 
 		return concat(chunks);
@@ -190,7 +190,7 @@ export class TxCodec extends Codec<Tx> {
 			version,
 			vin,
 			vout,
-			lockTime: AbsoluteLock.decode(locktime),
+			lockTime: TimeLock.decode(locktime),
 			witness: hasWitness,
 		};
 

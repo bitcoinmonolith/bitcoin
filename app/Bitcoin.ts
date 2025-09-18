@@ -1,4 +1,4 @@
-import { Peer } from "~/lib/p2p/Peer.ts";
+import { Peer } from "~/lib/satoshi/p2p/Peer.ts";
 
 export declare namespace Bitcoin {
 	type MessageHandler<T> = {

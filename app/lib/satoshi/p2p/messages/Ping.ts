@@ -1,15 +1,15 @@
 import { Codec } from "@nomadshiba/struct-js";
 import { BytesView } from "~/lib/BytesView.ts";
-import { PeerMessage } from "~/lib/p2p/PeerMessage.ts";
+import { PeerMessage } from "~/lib/satoshi/p2p/PeerMessage.ts";
 
-export type PongMessage = {
+export type PingMessage = {
 	nonce: bigint;
 };
 
-export class PongMessageCodec extends Codec<PongMessage> {
+export class PingMessageCodec extends Codec<PingMessage> {
 	public readonly stride = 8;
 
-	public encode(data: PongMessage): Uint8Array {
+	public encode(data: PingMessage): Uint8Array {
 		const bytes = new Uint8Array(8);
 		const view = new BytesView(bytes);
 
@@ -18,7 +18,7 @@ export class PongMessageCodec extends Codec<PongMessage> {
 		return bytes;
 	}
 
-	public decode(bytes: Uint8Array): PongMessage {
+	public decode(bytes: Uint8Array): PingMessage {
 		const view = new BytesView(bytes);
 
 		return {
@@ -27,4 +27,4 @@ export class PongMessageCodec extends Codec<PongMessage> {
 	}
 }
 
-export const PongMessage = new PeerMessage("pong", new PongMessageCodec());
+export const PingMessage = new PeerMessage("ping", new PingMessageCodec());

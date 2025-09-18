@@ -8,8 +8,8 @@ import { bytes32 } from "~/lib/primitives/Bytes32.ts";
 import { getTxId } from "~/lib/primitives/Tx.ts";
 import { u24 } from "~/lib/primitives/U24.ts";
 import { Store } from "~/lib/Store.ts";
-import { AbsoluteLock } from "~/lib/weirdness/AbsoluteLock.ts";
-import { SequenceLock } from "~/lib/weirdness/SequenceLock.ts";
+import { TimeLock } from "~/lib/primitives/weirdness/TimeLock.ts";
+import { SequenceLock } from "~/lib/primitives/weirdness/SequenceLock.ts";
 
 /*
 BIP-30 nTime > 1331769600
@@ -301,7 +301,7 @@ export async function saveBlock(blockHeight: number, block: Block) {
 	const coinbase: CoinbaseTxData = {
 		txId: getTxId(coinbaseTx),
 		version: coinbaseTx.version,
-		lockTime: AbsoluteLock.encode(coinbaseTx.lockTime),
+		lockTime: TimeLock.encode(coinbaseTx.lockTime),
 		sequence: SequenceLock.encode(coinbaseTxVin.sequenceLock),
 		coinbase: coinbaseTxVin.scriptSig,
 		vout: coinbaseTx.vout.map((out): TxOutData => ({
@@ -347,7 +347,7 @@ export async function saveBlock(blockHeight: number, block: Block) {
 		const txData: TxData = {
 			txId,
 			version: tx.version,
-			lockTime: AbsoluteLock.encode(tx.lockTime),
+			lockTime: TimeLock.encode(tx.lockTime),
 			vin,
 			vout: tx.vout.map((out): TxOutData => ({
 				spent: false,

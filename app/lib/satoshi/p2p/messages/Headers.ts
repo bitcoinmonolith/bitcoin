@@ -1,6 +1,6 @@
 import { Codec } from "@nomadshiba/struct-js";
 import { BlockHeader } from "~/lib/primitives/BlockHeader.ts";
-import { PeerMessage } from "~/lib/p2p/PeerMessage.ts";
+import { PeerMessage } from "~/lib/satoshi/p2p/PeerMessage.ts";
 import { CompactSize } from "~/lib/CompactSize.ts";
 
 export type HeadersMessage = {

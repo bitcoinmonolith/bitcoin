@@ -1,5 +1,5 @@
 import { Codec } from "@nomadshiba/struct-js";
-import { PeerMessage } from "~/lib/p2p/PeerMessage.ts";
+import { PeerMessage } from "~/lib/satoshi/p2p/PeerMessage.ts";
 
 export type VerackMessage = null;
 

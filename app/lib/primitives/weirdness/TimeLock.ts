@@ -1,10 +1,10 @@
-export type AbsoluteLock =
+export type TimeLock =
 	| { kind: "none" } // locktime = 0
 	| { kind: "block"; height: number } // block height
 	| { kind: "time"; timestamp: number }; // unix timestamp
 
-export namespace AbsoluteLock {
-	export function decode(locktime: number): AbsoluteLock {
+export namespace TimeLock {
+	export function decode(locktime: number): TimeLock {
 		locktime >>>= 0; // force unsigned 32-bit
 
 		if (locktime === 0) return { kind: "none" };
@@ -12,7 +12,7 @@ export namespace AbsoluteLock {
 		return { kind: "time", timestamp: locktime };
 	}
 
-	export function encode(abs: AbsoluteLock): number {
+	export function encode(abs: TimeLock): number {
 		switch (abs.kind) {
 			case "none":
 				return 0;

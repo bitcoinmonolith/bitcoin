@@ -1,20 +1,19 @@
 export class WeakRefMap<K, V extends object> {
-	private cacheMap = new Map<K, WeakRef<V>>();
-	private finalizer = new FinalizationRegistry((key: K) => {
-		this.cacheMap.delete(key);
-	});
+	private map = new Map<K, WeakRef<V>>();
+	private finalizer = new FinalizationRegistry<K>((key) => this.map.delete(key));
 
 	set(key: K, value: V): void {
-		const cache = this.get(key);
-		if (cache) {
-			if (cache === value) return;
-			this.finalizer.unregister(cache);
+		const oldRef = this.map.get(key);
+		if (oldRef) {
+			if (oldRef.deref() === value) return;
+			this.finalizer.unregister(oldRef);
 		}
-		this.cacheMap.set(key, new WeakRef(value));
-		this.finalizer.register(value, key, value);
+		const newRef = new WeakRef(value);
+		this.map.set(key, newRef);
+		this.finalizer.register(value, key, newRef);
 	}
 
 	get(key: K): V | undefined {
-		return this.cacheMap.get(key)?.deref();
+		return this.map.get(key)?.deref();
 	}
 }
