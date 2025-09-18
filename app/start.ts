@@ -1,24 +1,15 @@
-import { bytesToHex, hexToBytes } from "@noble/hashes/utils";
-import { equals } from "@std/bytes";
+import { hexToBytes } from "@noble/hashes/utils";
+import { join } from "@std/path";
 import { Bitcoin } from "~/Bitcoin.ts";
+import { BASE_DATA_DIR } from "~/lib/constants.ts";
 import { GetHeadersHandler } from "~/lib/satoshi/p2p/handlers/GetHeadersHandler.ts";
 import { InvHandler } from "~/lib/satoshi/p2p/handlers/InvHandler.ts";
 import { ping, PingHandler } from "~/lib/satoshi/p2p/handlers/PingHandler.ts";
 import { SendCmpctHandler } from "~/lib/satoshi/p2p/handlers/SendCmpctHandler.ts";
 import { handshake, VersionHandler } from "~/lib/satoshi/p2p/handlers/VersionHandler.ts";
-import { BlockMessage } from "~/lib/satoshi/p2p/messages/Block.ts";
-import { GetDataMessage } from "~/lib/satoshi/p2p/messages/GetData.ts";
 import { VersionMessage } from "~/lib/satoshi/p2p/messages/Version.ts";
 import { Peer } from "~/lib/satoshi/p2p/Peer.ts";
-import { BASE_DATA_DIR, GENESIS_BLOCK_HASH } from "~/lib/constants.ts";
-import { GetHeadersMessage } from "~/lib/satoshi/p2p/messages/GetHeaders.ts";
-import { HeadersMessage } from "~/lib/satoshi/p2p/messages/Headers.ts";
-import { getBlockHash } from "~/lib/primitives/BlockHeader.ts";
-import { getTxId } from "~/lib/primitives/Tx.ts";
-import { computeSatoshiMerkleRoot } from "~/lib/satoshi/crypto/merkle.ts";
-import { saveBlock } from "~/lib/storage/blocks.ts";
 import { Blockchain } from "./lib/storage/blockchain.ts";
-import { join } from "@std/path";
 
 const NETWORK_MAGIC = hexToBytes("f9beb4d9"); // Mainnet
 /* const NETWORK_MAGIC = hexToBytes("0b110907"); // Testnet
@@ -60,7 +51,7 @@ const bitcoin = new Bitcoin({
 	],
 });
 
-const blockchain = new Blockchain(join(BASE_DATA_DIR, "blocks"), GENESIS_BLOCK_HASH, 0);
+const blockchain = new Blockchain(join(BASE_DATA_DIR, "blocks"));
 const peer = new Peer("192.168.1.10", 8333, NETWORK_MAGIC);
 
 await peer.connect().then(async () => {

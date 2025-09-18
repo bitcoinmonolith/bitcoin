@@ -1,101 +1,131 @@
-import { Struct, u8 } from "@nomadshiba/struct-js";
 import { equals } from "@std/bytes";
 import { join } from "@std/path";
-import { bytes32 } from "~/lib/primitives/Bytes32.ts";
 import { Peer } from "~/lib/satoshi/p2p/Peer.ts";
-import { Store } from "~/lib/Store.ts";
 import { Bitcoin } from "../../Bitcoin.ts";
+import { CompactSize } from "../CompactSize.ts";
 import { GENESIS_BLOCK_HASH } from "../constants.ts";
-import { getBlockHash } from "../primitives/BlockHeader.ts";
-import { BlockMessage } from "../satoshi/p2p/messages/Block.ts";
+import { JobPool } from "../JobPool.ts";
+import { BlockHeader } from "../primitives/BlockHeader.ts";
 import { GetDataMessage } from "../satoshi/p2p/messages/GetData.ts";
 import { GetHeadersMessage } from "../satoshi/p2p/messages/GetHeaders.ts";
 import { HeadersMessage } from "../satoshi/p2p/messages/Headers.ts";
-import { saveBlock } from "./blocks.ts";
+import { BlocksJobData, BlocksJobResult } from "./workers/verifyBlocks.ts";
+import { HeadersJobData, HeadersJobResult } from "./workers/verifyHeaders.ts";
+import { bytesToHex } from "@noble/hashes/utils";
+import { BlockMessage } from "../satoshi/p2p/messages/Block.ts";
 
 export class Blockchain {
 	public readonly baseDirectory: string;
 	public readonly dataDirectory: string;
+	public readonly workerCount: number;
 
-	public bestHash: Uint8Array;
-	public bestHeight: number = 0;
-	public headers: SharedArrayBuffer[] = [];
+	private readonly headerJobPool: JobPool<HeadersJobData, HeadersJobResult>;
+	private readonly blockJobPool: JobPool<BlocksJobData, BlocksJobResult>;
 
-	public readonly info: Store<[number], {
-		bestHash: Uint8Array;
-		bestHeight: number;
-	}>;
-
-	constructor(baseDirectory: string, bestHash: Uint8Array, bestHeight: number) {
-		this.bestHash = bestHash;
-		this.bestHeight = bestHeight;
+	constructor(baseDirectory: string, workerCount = navigator.hardwareConcurrency || 4) {
+		console.log(`Using ${workerCount} workers`);
+		this.workerCount = workerCount;
+		this.bestHash = new Uint8Array(new SharedArrayBuffer(GENESIS_BLOCK_HASH.byteLength));
+		this.bestHash.set(GENESIS_BLOCK_HASH);
+		this.bestHeight = 0;
 		this.baseDirectory = baseDirectory;
 		this.dataDirectory = join(baseDirectory, "data");
-		this.info = new Store([u8], new Struct({ bestHash: bytes32, bestHeight: u8 }), {
-			base: this.baseDirectory,
-			name: "info",
-		});
+
+		const blockWorkerPath = import.meta.resolve("./workers/verifyBlocks.ts");
+		this.blockJobPool = new JobPool<BlocksJobData, BlocksJobResult>(blockWorkerPath);
+
+		const headerWorkerPath = import.meta.resolve("./workers/verifyHeaders.ts");
+		this.headerJobPool = new JobPool<HeadersJobData, HeadersJobResult>(headerWorkerPath, 1);
 	}
 
-	lastSyncPerformance = 0;
+	private blocksByPrevHash = new Map<string, Uint8Array>();
 
+	lastSyncPerformance = 0;
+	public bestHash: Uint8Array<SharedArrayBuffer>;
+	public bestHeight: number = 0;
 	async fetchHeaders(ctx: Bitcoin, peer: Peer): Promise<void> {
+		console.log(`Fetching headers from peer ${peer.host}:${peer.port}...`);
+
+		const headersPromise = peer.expectRaw(HeadersMessage);
 		await peer.send(GetHeadersMessage, {
 			version: ctx.version.version,
 			locators: [this.bestHash],
 			stopHash: new Uint8Array(32),
 		});
+		const headers = await headersPromise;
+		const [count, countSize] = CompactSize.decode(headers, 0);
+		if (count === 0) {
+			console.log("Reached peer tip");
+			return;
+		}
 
-		const headersMsg = await peer.expect(
-			HeadersMessage,
-			(msg) =>
-				msg.headers.length === 0 || Boolean(msg.headers[0] && equals(msg.headers[0]?.prevHash, this.bestHash)),
+		const firstPrevHash = headers.subarray(
+			countSize + BlockHeader.shape.version.stride,
+			countSize + BlockHeader.shape.version.stride + BlockHeader.shape.prevHash.stride,
 		);
-		const headers = headersMsg.headers;
-		if (headers.length === 0) {
+		if (!equals(firstPrevHash, this.bestHash)) {
+			throw new Error("Headers do not connect to current chain");
+		}
+
+		await this.headerJobPool.queue({
+			headersBuffer_ro: headers.buffer,
+			lastHashBuffer_rw: this.bestHash.buffer,
+		});
+
+		console.log(`fetched ${count} headers`);
+
+		if (count === 0) {
 			console.log("caught up to peer tip");
 			return;
 		}
-		if (this.bestHash === GENESIS_BLOCK_HASH) {
-			await peer.send(GetDataMessage, {
-				inventory: [{ type: "WITNESS_BLOCK", hash: GENESIS_BLOCK_HASH }],
-			});
-			const block = await peer.expect(BlockMessage, (b) => equals(getBlockHash(b.header), GENESIS_BLOCK_HASH));
-			await saveBlock(0, block);
+
+		const inventory: GetDataMessage["inventory"] = new Array(count);
+		for (let i = 0; i < count; i++) {
+			const headerOffset = countSize + i * (BlockHeader.stride + 1);
+			const prevHash = headers.subarray(
+				headerOffset + BlockHeader.shape.version.stride,
+				headerOffset + BlockHeader.shape.version.stride + BlockHeader.shape.prevHash.stride,
+			);
+			this.blocksByPrevHash.set(
+				bytesToHex(prevHash),
+				headers.subarray(headerOffset, headerOffset + BlockHeader.stride),
+			);
+			inventory[i] = { type: "WITNESS_BLOCK", hash: prevHash }; // type 2 = block
+			this.bestHeight++;
 		}
 
-		let prevHash = this.bestHash;
-		for (const header of headers) {
-			if (!equals(header.prevHash, prevHash)) {
-				throw new Error("chain broken");
+		peer.listen((msg) => {
+			if (msg.command !== BlockMessage.command) return;
+			const blockPrevHash = msg.payload.subarray(
+				BlockHeader.shape.version.stride,
+				BlockHeader.shape.version.stride + BlockHeader.shape.prevHash.stride,
+			);
+			const blockPrevHashHex = bytesToHex(blockPrevHash);
+			const header = this.blocksByPrevHash.get(blockPrevHashHex);
+			if (!header) {
+				console.warn("Received block not requested, ignoring");
+				return;
 			}
 
-			if (this.bestHeight % 100 === 0) {
-				const time = performance.now() - this.lastSyncPerformance;
-				this.lastSyncPerformance = performance.now();
-				const blocksPerSecond = 100 / (time / 1000);
-				console.log(`syncing... height=${this.bestHeight} (${blocksPerSecond.toFixed(2)} blocks/s)`);
+			if (header.byteLength !== BlockHeader.stride) {
+				console.warn("cache is not a header, ignoring");
+				return;
 			}
 
-			const hash = getBlockHash(header);
-			const height = ++this.bestHeight;
-			prevHash = hash;
-			this.bestHash = hash;
+			const headerMatch = equals(
+				header,
+				msg.payload.subarray(0, BlockHeader.stride),
+			);
 
-			await peer.send(GetDataMessage, {
-				inventory: [{ type: "WITNESS_BLOCK", hash }],
-			});
+			if (!headerMatch) {
+				console.warn("Received block does not match header, ignoring");
+				return;
+			}
 
-			const block = await peer.expect(BlockMessage, (b) => equals(getBlockHash(b.header), hash));
+			this.blocksByPrevHash.set(blockPrevHashHex, msg.payload);
+			console.log(`Received block ${bytesToHex(blockPrevHash.toReversed())}`);
+		});
 
-			/* const computedMerkle = computeSatoshiMerkleRoot(block.txs.map(getTxId));
-			if (!equals(computedMerkle, block.header.merkleRoot)) {
-				throw new Error("invalid merkle root");
-			} */
-
-			await saveBlock(height, block);
-		}
-
-		return this.fetchHeaders(ctx, peer);
+		await peer.send(GetDataMessage, { inventory });
 	}
 }

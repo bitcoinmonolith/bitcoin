@@ -18,7 +18,7 @@
 	},
 	"unstable": ["raw-imports"],
 	"compilerOptions": {
-		"lib": ["deno.ns", "deno.window", "es2024", "deno.worker"],
+		"lib": ["deno.ns", "deno.window", "es2024"],
 		"strict": true,
 		"noUncheckedIndexedAccess": true
 	},
@@ -30,7 +30,7 @@
 	"lint": {
 		"rules": {
 			"exclude": ["no-namespace", "no-explicit-any"],
-			"include": ["camelcase", "no-slow-types"]
+			"include": ["no-slow-types"]
 		}
 	}
 }

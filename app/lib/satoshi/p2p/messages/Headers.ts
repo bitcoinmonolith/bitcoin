@@ -52,11 +52,11 @@ export class HeadersMessageCodec extends Codec<HeadersMessage> {
 
 		const headers: BlockHeader[] = [];
 		for (let i = 0; i < count; i++) {
-			if (offset + 80 > bytes.length) {
+			if (offset + BlockHeader.stride > bytes.length) {
 				throw new Error("Incomplete header data");
 			}
-			const headerBytes = bytes.subarray(offset, offset + 80);
-			offset += 80;
+			const headerBytes = bytes.subarray(offset, offset + BlockHeader.stride);
+			offset += BlockHeader.stride;
 
 			const txCount = bytes[offset++];
 			if (txCount !== 0x00) {

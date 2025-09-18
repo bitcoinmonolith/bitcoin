@@ -8,7 +8,7 @@ const textDecoder = new TextDecoder("ascii");
 export declare namespace Peer {
 	export type MessagePayload = {
 		command: string;
-		payload: Uint8Array;
+		payload: Uint8Array<SharedArrayBuffer>;
 	};
 
 	export type Message<T> = {
@@ -20,7 +20,7 @@ export declare namespace Peer {
 		message: string;
 	};
 
-	export type Listener = (payload: Peer.MessagePayload) => void;
+	export type Listener = (msg: Peer.MessagePayload) => void;
 	export type Unlistener = () => void;
 }
 
@@ -65,10 +65,10 @@ export class Peer {
 
 		// Start reading from connection
 		connectionPromise.then(async (connection) => {
-			let inbox: Uint8Array = new Uint8Array(0);
+			let inbox = new Uint8Array(new SharedArrayBuffer(0));
 
 			try {
-				const bytes = new Uint8Array(4096);
+				const bytes = new Uint8Array(new SharedArrayBuffer(4096));
 				while (this.#connected && connection.readable) {
 					const n = await connection.read(bytes);
 					if (n === null) break;
@@ -76,7 +76,7 @@ export class Peer {
 
 					{
 						const indexCache = inbox;
-						inbox = new Uint8Array(indexCache.byteLength + n);
+						inbox = new Uint8Array(new SharedArrayBuffer(indexCache.byteLength + n));
 						inbox.set(indexCache, 0);
 						inbox.set(bytes.subarray(0, n), indexCache.byteLength);
 					}
@@ -106,6 +106,8 @@ export class Peer {
 
 						const command = textDecoder.decode(inbox.subarray(4, 16)).replace(/\0+$/, "");
 						const payload = inbox.subarray(24, totalLength);
+
+						this.log(`📥 Received: ${command} (${payload.length} bytes)`);
 
 						for (const listener of this.listeners) {
 							listener({ command, payload });
@@ -159,13 +161,33 @@ export class Peer {
 		};
 	}
 
-	expect<T>(message: Peer.Message<T>, matcher: (msg: T, raw: Uint8Array) => boolean): Promise<T> {
-		return new Promise<T>((resolve, reject) => {
+	expectRaw<T>(
+		message: Peer.Message<T>,
+		matcher?: (raw: Uint8Array<SharedArrayBuffer>) => boolean,
+	): Promise<Uint8Array<SharedArrayBuffer>> {
+		return new Promise((resolve, reject) => {
+			const unlisten = this.listen((msg) => {
+				if (msg.command !== message.command) return;
+				if (matcher && !matcher(msg.payload)) return;
+				this.log(`✅ Matched expected ${msg.command}`);
+				unlisten();
+				resolve(msg.payload);
+			});
+
+			setTimeout(() => {
+				unlisten();
+				reject(new Error(`Timeout waiting for ${message.command}`));
+			}, 30_000);
+		});
+	}
+
+	expect<T>(message: Peer.Message<T>, matcher?: (msg: T, raw: Uint8Array<SharedArrayBuffer>) => boolean): Promise<T> {
+		return new Promise((resolve, reject) => {
 			const unlisten = this.listen((msg) => {
 				if (msg.command !== message.command) return;
 				this.log(`📥 Received: ${msg.command} (${msg.payload.length} bytes)`);
 				const data = message.codec.decode(msg.payload);
-				if (!matcher(data, msg.payload)) return;
+				if (matcher && !matcher(data, msg.payload)) return;
 				this.log(`✅ Matched expected ${msg.command}`);
 				unlisten();
 				resolve(data);
@@ -174,7 +196,7 @@ export class Peer {
 			setTimeout(() => {
 				unlisten();
 				reject(new Error(`Timeout waiting for ${message.command}`));
-			}, 30000);
+			}, 30_000);
 		});
 	}
 
