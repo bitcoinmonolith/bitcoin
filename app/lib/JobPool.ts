@@ -1,13 +1,11 @@
 const JOB_WORKER_COUNT = navigator.hardwareConcurrency || 4;
 
 export class JobPool<TData, TResult> {
-	private readonly workers: Worker[] = [];
 	private readonly freeWorkers: Worker[] = [];
 
-	constructor(script: string, workerCount = JOB_WORKER_COUNT) {
+	constructor(workerScriptPath: string, workerCount = JOB_WORKER_COUNT) {
 		for (let i = 0; i < workerCount; i++) {
-			const worker = new Worker(script, { type: "module" });
-			this.workers.push(worker);
+			const worker = new Worker(workerScriptPath, { type: "module" });
 			this.freeWorkers.push(worker);
 		}
 	}

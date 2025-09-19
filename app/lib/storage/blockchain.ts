@@ -1,131 +1,185 @@
+import { bytesToNumberLE } from "@noble/curves/abstract/utils";
+import { sha256 } from "@noble/hashes/sha2";
+import { bytesToHex } from "@noble/hashes/utils";
 import { equals } from "@std/bytes";
 import { join } from "@std/path";
 import { Peer } from "~/lib/satoshi/p2p/Peer.ts";
 import { Bitcoin } from "../../Bitcoin.ts";
 import { CompactSize } from "../CompactSize.ts";
-import { GENESIS_BLOCK_HASH } from "../constants.ts";
+import { GENESIS_BLOCK_HASH, GENESIS_BLOCK_HEADER, GENESIS_BLOCK_PREV_HASH } from "../constants.ts";
 import { JobPool } from "../JobPool.ts";
 import { BlockHeader } from "../primitives/BlockHeader.ts";
-import { GetDataMessage } from "../satoshi/p2p/messages/GetData.ts";
 import { GetHeadersMessage } from "../satoshi/p2p/messages/GetHeaders.ts";
 import { HeadersMessage } from "../satoshi/p2p/messages/Headers.ts";
 import { BlocksJobData, BlocksJobResult } from "./workers/verifyBlocks.ts";
-import { HeadersJobData, HeadersJobResult } from "./workers/verifyHeaders.ts";
-import { bytesToHex } from "@noble/hashes/utils";
-import { BlockMessage } from "../satoshi/p2p/messages/Block.ts";
+
+const TWO256 = 1n << 256n;
+
+function decodeNBitsFromHeader(header: Uint8Array): number {
+	const nBitsOffset = BlockHeader.shape.version.stride +
+		BlockHeader.shape.prevHash.stride +
+		BlockHeader.shape.merkleRoot.stride +
+		BlockHeader.shape.timestamp.stride;
+	return (
+		header[nBitsOffset]! |
+		(header[nBitsOffset + 1]! << 8) |
+		(header[nBitsOffset + 2]! << 16) |
+		(header[nBitsOffset + 3]! << 24)
+	) >>> 0;
+}
+function nBitsToTarget(nBits: number): bigint {
+	const exponent = nBits >>> 24;
+	const mantissa = nBits & 0x007fffff;
+	return BigInt(mantissa) * (1n << (8n * (BigInt(exponent) - 3n)));
+}
+function workFromHeader(header: Uint8Array): bigint {
+	const target = nBitsToTarget(decodeNBitsFromHeader(header));
+	return target > 0n ? (TWO256 / (target + 1n)) : 0n;
+}
+
+function verifyProofOfWork(header: Uint8Array, hash: Uint8Array): boolean {
+	const nBits = decodeNBitsFromHeader(header);
+	const target = nBitsToTarget(nBits);
+	const hashInt = bytesToNumberLE(hash); // use LE since Bitcoin compares hashes as little-endian numbers
+	return hashInt <= target;
+}
 
 export class Blockchain {
 	public readonly baseDirectory: string;
 	public readonly dataDirectory: string;
 	public readonly workerCount: number;
 
-	private readonly headerJobPool: JobPool<HeadersJobData, HeadersJobResult>;
 	private readonly blockJobPool: JobPool<BlocksJobData, BlocksJobResult>;
 
 	constructor(baseDirectory: string, workerCount = navigator.hardwareConcurrency || 4) {
 		console.log(`Using ${workerCount} workers`);
 		this.workerCount = workerCount;
-		this.bestHash = new Uint8Array(new SharedArrayBuffer(GENESIS_BLOCK_HASH.byteLength));
-		this.bestHash.set(GENESIS_BLOCK_HASH);
-		this.bestHeight = 0;
 		this.baseDirectory = baseDirectory;
 		this.dataDirectory = join(baseDirectory, "data");
 
 		const blockWorkerPath = import.meta.resolve("./workers/verifyBlocks.ts");
 		this.blockJobPool = new JobPool<BlocksJobData, BlocksJobResult>(blockWorkerPath);
-
-		const headerWorkerPath = import.meta.resolve("./workers/verifyHeaders.ts");
-		this.headerJobPool = new JobPool<HeadersJobData, HeadersJobResult>(headerWorkerPath, 1);
 	}
 
-	private blocksByPrevHash = new Map<string, Uint8Array>();
+	// prevHash(BigInt) -> height where that prev is found
+	private prevHashToHeader = new Map<bigint, number>([[bytesToNumberLE(GENESIS_BLOCK_PREV_HASH), 0]]);
 
-	lastSyncPerformance = 0;
-	public bestHash: Uint8Array<SharedArrayBuffer>;
-	public bestHeight: number = 0;
-	async fetchHeaders(ctx: Bitcoin, peer: Peer): Promise<void> {
-		console.log(`Fetching headers from peer ${peer.host}:${peer.port}...`);
+	// [hash, header, cumulativeWork]
+	private headerChain: [Uint8Array, Uint8Array, bigint][] = [
+		[GENESIS_BLOCK_HASH, GENESIS_BLOCK_HEADER, workFromHeader(GENESIS_BLOCK_HEADER)],
+	];
 
-		const headersPromise = peer.expectRaw(HeadersMessage);
-		await peer.send(GetHeadersMessage, {
-			version: ctx.version.version,
-			locators: [this.bestHash],
-			stopHash: new Uint8Array(32),
-		});
-		const headers = await headersPromise;
-		const [count, countSize] = CompactSize.decode(headers, 0);
-		if (count === 0) {
-			console.log("Reached peer tip");
-			return;
-		}
+	getHeight() {
+		return this.headerChain.length - 1;
+	}
+	private getTipWork(): bigint {
+		return this.headerChain.at(-1)![2];
+	}
 
-		const firstPrevHash = headers.subarray(
-			countSize + BlockHeader.shape.version.stride,
-			countSize + BlockHeader.shape.version.stride + BlockHeader.shape.prevHash.stride,
-		);
-		if (!equals(firstPrevHash, this.bestHash)) {
-			throw new Error("Headers do not connect to current chain");
-		}
+	async downloadHeaders(ctx: Bitcoin, peer: Peer) {
+		// work on a local candidate; only commit if it beats current tip work
+		const chain: [Uint8Array, Uint8Array, bigint][] = Array.from(this.headerChain);
 
-		await this.headerJobPool.queue({
-			headersBuffer_ro: headers.buffer,
-			lastHashBuffer_rw: this.bestHash.buffer,
-		});
+		const buildLocatorHashes = (): Uint8Array[] => {
+			const locators: Uint8Array[] = [];
+			let step = 1;
+			let index = chain.length - 1;
+			while (index >= 0) {
+				locators.push(chain[index]![0]);
+				if (locators.length >= 10) step <<= 1;
+				index -= step;
+			}
+			if (!equals(locators.at(-1)!, GENESIS_BLOCK_HASH)) locators.push(GENESIS_BLOCK_HASH);
+			return locators;
+		};
 
-		console.log(`fetched ${count} headers`);
+		let locators = buildLocatorHashes();
 
-		if (count === 0) {
-			console.log("caught up to peer tip");
-			return;
-		}
+		const getBestHash = () => chain.at(-1)![0];
+		const getHeight = () => chain.length - 1;
+		const getBestHeader = () => chain.at(-1)![1];
+		const getTipWork = () => chain.at(-1)![2];
 
-		const inventory: GetDataMessage["inventory"] = new Array(count);
-		for (let i = 0; i < count; i++) {
-			const headerOffset = countSize + i * (BlockHeader.stride + 1);
-			const prevHash = headers.subarray(
-				headerOffset + BlockHeader.shape.version.stride,
-				headerOffset + BlockHeader.shape.version.stride + BlockHeader.shape.prevHash.stride,
-			);
-			this.blocksByPrevHash.set(
-				bytesToHex(prevHash),
-				headers.subarray(headerOffset, headerOffset + BlockHeader.stride),
-			);
-			inventory[i] = { type: "WITNESS_BLOCK", hash: prevHash }; // type 2 = block
-			this.bestHeight++;
-		}
-
-		peer.listen((msg) => {
-			if (msg.command !== BlockMessage.command) return;
-			const blockPrevHash = msg.payload.subarray(
-				BlockHeader.shape.version.stride,
-				BlockHeader.shape.version.stride + BlockHeader.shape.prevHash.stride,
-			);
-			const blockPrevHashHex = bytesToHex(blockPrevHash);
-			const header = this.blocksByPrevHash.get(blockPrevHashHex);
-			if (!header) {
-				console.warn("Received block not requested, ignoring");
-				return;
+		while (true) {
+			const headersPromise = peer.expectRaw(HeadersMessage);
+			await peer.send(GetHeadersMessage, {
+				version: ctx.version.version,
+				locators,
+				stopHash: new Uint8Array(32),
+			});
+			const headers = await headersPromise;
+			const [count, countSize] = CompactSize.decode(headers, 0);
+			if (count === 0) {
+				console.log("Reached peer tip");
+				break;
 			}
 
-			if (header.byteLength !== BlockHeader.stride) {
-				console.warn("cache is not a header, ignoring");
-				return;
-			}
-
-			const headerMatch = equals(
-				header,
-				msg.payload.subarray(0, BlockHeader.stride),
+			const firstPrevHash = headers.subarray(
+				countSize + BlockHeader.shape.version.stride,
+				countSize + BlockHeader.shape.version.stride + BlockHeader.shape.prevHash.stride,
 			);
 
-			if (!headerMatch) {
-				console.warn("Received block does not match header, ignoring");
-				return;
+			if (!equals(firstPrevHash, getBestHash())) {
+				const connectsToHeight = this.prevHashToHeader.get(bytesToNumberLE(firstPrevHash));
+				if (connectsToHeight === undefined) {
+					// unknown fork point; restart from genesis locators but keep current candidate
+					locators = [GENESIS_BLOCK_HASH];
+					// shrink candidate to just genesis, we’ll rebuild from a known point
+					chain.length = 1;
+				} else {
+					// rewind candidate to the fork point
+					chain.length = connectsToHeight + 1;
+					locators = buildLocatorHashes();
+				}
 			}
 
-			this.blocksByPrevHash.set(blockPrevHashHex, msg.payload);
-			console.log(`Received block ${bytesToHex(blockPrevHash.toReversed())}`);
-		});
+			for (let i = 0; i < count; i++) {
+				const headerOffset = countSize + i * (BlockHeader.stride + 1);
+				const header = headers.subarray(headerOffset, headerOffset + BlockHeader.stride);
+				const prevHash = header.subarray(
+					BlockHeader.shape.version.stride,
+					BlockHeader.shape.version.stride + BlockHeader.shape.prevHash.stride,
+				);
+				if (!equals(prevHash, getBestHash())) {
+					throw new Error(`Headers do not form a chain at index ${i}`);
+				}
 
-		await peer.send(GetDataMessage, { inventory });
+				const hash = sha256(sha256(header));
+				if (!verifyProofOfWork(header, hash)) {
+					throw new Error(`Invalid proof of work at height ${getHeight() + 1}`);
+				}
+				const cumul = getTipWork() + workFromHeader(header);
+				chain.push([hash, header, cumul]);
+			}
+
+			const bestHash = getBestHash();
+			locators = [bestHash];
+			console.log(
+				`Downloaded ${getHeight()} headers, latest: ${
+					bytesToHex(getBestHash().toReversed())
+				}, work=${getTipWork()}`,
+			);
+		}
+
+		// commit only if cumulative work improved (true "longest" chain)
+		if (getTipWork() > this.getTipWork()) {
+			console.log(`Updating chain: height ${this.getHeight()} → ${chain.length - 1}`);
+			this.headerChain = chain;
+
+			this.prevHashToHeader.clear();
+			this.prevHashToHeader.set(bytesToNumberLE(GENESIS_BLOCK_PREV_HASH), 0);
+			for (const [height, [, header]] of this.headerChain.entries()) {
+				const prevLE = header.subarray(
+					BlockHeader.shape.version.stride,
+					BlockHeader.shape.version.stride + BlockHeader.shape.prevHash.stride,
+				);
+				this.prevHashToHeader.set(bytesToNumberLE(prevLE), height);
+			}
+			console.log(`Chain updated. Height=${this.getHeight()} Work=${this.getTipWork()}`);
+		} else {
+			console.log(`Kept existing tip. Height=${this.getHeight()} Work=${this.getTipWork()}`);
+		}
+
+		console.log();
 	}
 }

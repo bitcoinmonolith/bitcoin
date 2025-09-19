@@ -58,5 +58,6 @@ await peer.connect().then(async () => {
 	bitcoin.addPeer(peer);
 	await handshake(peer, version);
 	await ping(peer);
-	await blockchain.fetchHeaders(bitcoin, peer);
+	await blockchain.downloadHeaders(bitcoin, peer);
+	await blockchain.downloadHeaders(bitcoin, peer);
 });
