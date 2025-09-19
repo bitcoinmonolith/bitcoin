@@ -263,7 +263,7 @@ export class Peer {
 				if (matcher && !matcher(msg.payload)) return;
 				clearTimeout(tid);
 				unlisten();
-				resolve(msg.payload);
+				resolve(msg.payload.slice());
 			});
 			const tid = setTimeout(() => {
 				unlisten();
@@ -279,7 +279,7 @@ export class Peer {
 		return new Promise((resolve, reject) => {
 			const unlisten = this.listen((msg) => {
 				if (msg.command !== message.command) return;
-				const data = message.codec.decode(msg.payload);
+				const data = message.codec.decode(msg.payload.slice());
 				if (matcher && !matcher(data, msg.payload)) return;
 				clearTimeout(tid);
 				unlisten();

@@ -1,4 +1,3 @@
-import { bytesToHex } from "@noble/hashes/utils";
 import { bool, bytes, Codec, i32, Struct, Tuple, u16, u32, u64, Vector } from "@nomadshiba/struct-js";
 import { equals } from "@std/bytes";
 import { join } from "@std/path";
@@ -7,9 +6,10 @@ import { Block } from "~/lib/primitives/Block.ts";
 import { bytes32 } from "~/lib/primitives/Bytes32.ts";
 import { getTxId } from "~/lib/primitives/Tx.ts";
 import { u24 } from "~/lib/primitives/U24.ts";
-import { Store } from "~/lib/Store.ts";
-import { TimeLock } from "~/lib/primitives/weirdness/TimeLock.ts";
 import { SequenceLock } from "~/lib/primitives/weirdness/SequenceLock.ts";
+import { TimeLock } from "~/lib/primitives/weirdness/TimeLock.ts";
+import { Store } from "~/lib/Store.ts";
+import { humanize } from "../logging/human.ts";
 
 /*
 BIP-30 nTime > 1331769600
@@ -176,7 +176,7 @@ async function indexTxByTxId(tx: TxData, ...[blockHeight, txIndex]: TxKey) {
 		console.error("Multiple existing matches for txId prefix:", {
 			blockHeight,
 			txIndex,
-			txId: bytesToHex(tx.txId.toReversed()),
+			txId: humanize(tx.txId),
 		});
 		throw new Error("Unexpected multiple entries for txId prefixes, this should never happen");
 	}
@@ -211,7 +211,7 @@ async function indexTxByTxId(tx: TxData, ...[blockHeight, txIndex]: TxKey) {
 	if (diffIndex === 32) {
 		console.log(
 			`TxId`,
-			bytesToHex(tx.txId.toReversed()),
+			humanize(tx.txId),
 			`exists both at ${blockHeight}:${txIndex} and ${existingBlockHeight}:${existingTxIndex}`,
 		);
 
@@ -326,9 +326,9 @@ export async function saveBlock(blockHeight: number, block: Block): Promise<void
 		for (const [vinIndex, vinEntry] of tx.vin.entries()) {
 			const utxoTx = await getTxByTxId(vinEntry.txId);
 			if (!utxoTx) {
-				console.log("Input txId:", bytesToHex(txId.toReversed()), "vin:", vinIndex);
-				console.log("UTXO txId:", bytesToHex(vinEntry.txId.toReversed()), "vout:", vinEntry.vout);
-				console.log("Missing txId:", bytesToHex(vinEntry.txId.toReversed()));
+				console.log("Input txId:", humanize(txId), "vin:", vinIndex);
+				console.log("UTXO txId:", humanize(vinEntry.txId), "vout:", vinEntry.vout);
+				console.log("Missing txId:", humanize(vinEntry.txId));
 				throw new Error("Referenced UTXO transaction not found");
 			}
 			const { key: [utxoBlockHeight, utxoTxIndex] } = utxoTx;

@@ -38,7 +38,7 @@ const version: Version = {
 
 const bitcoin = new Bitcoin({
 	version,
-	blockchain: new Blockchain(join(BASE_DATA_DIR, "blocks")),
+	blockchain: new Blockchain(join(BASE_DATA_DIR, "chain")),
 	handlers: [
 		VersionHandler,
 		PingHandler,

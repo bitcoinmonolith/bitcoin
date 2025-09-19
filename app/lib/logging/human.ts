@@ -1,6 +1,6 @@
 import { bytesToHex } from "@noble/hashes/utils";
 
-export function toHumanReadable(value: unknown): unknown {
+export function humanize(value: unknown): unknown {
 	if (value instanceof Uint8Array) {
 		return bytesToHex(value.toReversed());
 	}
@@ -14,13 +14,13 @@ export function toHumanReadable(value: unknown): unknown {
 	}
 
 	if (Array.isArray(value)) {
-		return value.map(toHumanReadable);
+		return value.map(humanize);
 	}
 
 	if (value && typeof value === "object") {
 		const obj: Record<string, unknown> = {};
 		for (const [k, v] of Object.entries(value)) {
-			obj[k] = toHumanReadable(v);
+			obj[k] = humanize(v);
 		}
 		return obj;
 	}

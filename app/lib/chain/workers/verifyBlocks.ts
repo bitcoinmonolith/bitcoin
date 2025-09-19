@@ -2,9 +2,9 @@
 
 import { equals } from "@std/bytes";
 import { BlockMessage } from "~/lib/satoshi/p2p/messages/Block.ts";
-import { computeSatoshiMerkleRoot } from "../../satoshi/crypto/merkle.ts";
+import { humanize } from "../../logging/human.ts";
 import { getTxId, getWTxId } from "../../primitives/Tx.ts";
-import { bytesToHex } from "@noble/hashes/utils";
+import { computeSatoshiMerkleRoot } from "../../satoshi/crypto/merkle.ts";
 
 export type BlocksJobData = {
 	blockBuffers: SharedArrayBuffer[];
@@ -43,8 +43,8 @@ self.onmessage = (event) => {
 			if (!equals(merkleRoot, block.header.merkleRoot)) {
 				const result: BlocksJobResult = {
 					valid: false,
-					error: `Merkle root mismatch: expected ${bytesToHex(block.header.merkleRoot.toReversed())}, got ${
-						bytesToHex(merkleRoot.toReversed())
+					error: `Merkle root mismatch: expected ${humanize(block.header.merkleRoot)}, got ${
+						humanize(merkleRoot)
 					}`,
 				};
 				self.postMessage(result);
