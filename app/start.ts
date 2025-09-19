@@ -38,6 +38,7 @@ const version: Version = {
 
 const bitcoin = new Bitcoin({
 	version,
+	blockchain: new Blockchain(join(BASE_DATA_DIR, "blocks")),
 	handlers: [
 		VersionHandler,
 		PingHandler,
@@ -47,7 +48,6 @@ const bitcoin = new Bitcoin({
 	],
 });
 
-const blockchain = new Blockchain(join(BASE_DATA_DIR, "blocks"));
 const peer = new Peer("192.168.1.10", 8333, NETWORK_MAGIC);
 
 await peer.connect().then(async () => {
@@ -61,6 +61,6 @@ await peer.connect().then(async () => {
 		transPort: peer.localPort,
 	});
 	await ping(peer);
-	await blockchain.downloadHeaders(bitcoin, peer);
-	await blockchain.downloadHeaders(bitcoin, peer);
+	await bitcoin.blockchain.downloadHeaders(bitcoin, peer);
+	await bitcoin.blockchain.downloadHeaders(bitcoin, peer);
 });

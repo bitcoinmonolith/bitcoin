@@ -1,4 +1,5 @@
 import { Peer } from "~/lib/satoshi/p2p/Peer.ts";
+import { Blockchain } from "./lib/chain/Blockchain.ts";
 import { Version } from "./lib/satoshi/p2p/messages/Version.ts";
 
 export declare namespace Bitcoin {
@@ -22,6 +23,7 @@ export declare namespace Bitcoin {
 
 export class Bitcoin {
 	public readonly version: Version;
+	public readonly blockchain: Blockchain;
 
 	private readonly handlers: readonly Bitcoin.MessageHandler<unknown>[];
 	private readonly handlersMap: ReadonlyMap<string, Bitcoin.MessageHandler<unknown>>;
@@ -31,8 +33,10 @@ export class Bitcoin {
 	constructor(params: {
 		version: Version;
 		handlers: readonly Bitcoin.MessageHandler<unknown>[];
+		blockchain: Blockchain;
 	}) {
 		this.version = params.version;
+		this.blockchain = params.blockchain;
 		this.handlers = params.handlers;
 		this.peers = new Set<Peer>();
 		this.handlersMap = new Map(this.handlers.map((handler) => [handler.message.command, handler] as const));
