@@ -69,23 +69,23 @@ export class Blockchain {
 		[GENESIS_BLOCK_HASH, GENESIS_BLOCK_HEADER, workFromHeader(GENESIS_BLOCK_HEADER)],
 	];
 
-	getHeight() {
+	public getHeight(): number {
 		return this.headerChain.length - 1;
 	}
-	private getTipWork(): bigint {
+	public getTipWork(): bigint {
 		return this.headerChain.at(-1)![2];
 	}
 
-	async downloadHeaders(ctx: Bitcoin, peer: Peer) {
+	public async downloadHeaders(ctx: Bitcoin, peer: Peer): Promise<void> {
 		// work on a local candidate; only commit if it beats current tip work
-		const chain: [Uint8Array, Uint8Array, bigint][] = Array.from(this.headerChain);
+		const headerChain: [Uint8Array, Uint8Array, bigint][] = Array.from(this.headerChain);
 
 		const buildLocatorHashes = (): Uint8Array[] => {
 			const locators: Uint8Array[] = [];
 			let step = 1;
-			let index = chain.length - 1;
+			let index = headerChain.length - 1;
 			while (index >= 0) {
-				locators.push(chain[index]![0]);
+				locators.push(headerChain[index]![0]);
 				if (locators.length >= 10) step <<= 1;
 				index -= step;
 			}
@@ -95,10 +95,10 @@ export class Blockchain {
 
 		let locators = buildLocatorHashes();
 
-		const getBestHash = () => chain.at(-1)![0];
-		const getHeight = () => chain.length - 1;
-		const getBestHeader = () => chain.at(-1)![1];
-		const getTipWork = () => chain.at(-1)![2];
+		const getBestHash = () => headerChain.at(-1)![0];
+		const getHeight = () => headerChain.length - 1;
+		const getBestHeader = () => headerChain.at(-1)![1];
+		const getTipWork = () => headerChain.at(-1)![2];
 
 		while (true) {
 			const headersPromise = peer.expectRaw(HeadersMessage);
@@ -110,7 +110,7 @@ export class Blockchain {
 			const headers = await headersPromise;
 			const [count, countSize] = CompactSize.decode(headers, 0);
 			if (count === 0) {
-				console.log("Reached peer tip");
+				peer.log("Reached peer tip");
 				break;
 			}
 
@@ -123,13 +123,16 @@ export class Blockchain {
 				const connectsToHeight = this.prevHashToHeader.get(bytesToNumberLE(firstPrevHash));
 				if (connectsToHeight === undefined) {
 					// unknown fork point; restart from genesis locators but keep current candidate
-					locators = [GENESIS_BLOCK_HASH];
+					locators[0] = GENESIS_BLOCK_HASH;
+					locators.length = 1;
 					// shrink candidate to just genesis, we’ll rebuild from a known point
-					chain.length = 1;
+					headerChain.length = 1;
+					peer.log("Fork detected, restarting from genesis");
 				} else {
 					// rewind candidate to the fork point
-					chain.length = connectsToHeight + 1;
+					headerChain.length = connectsToHeight + 1;
 					locators = buildLocatorHashes();
+					peer.log(`Rewound to height ${connectsToHeight} to resolve a fork`);
 				}
 			}
 
@@ -149,12 +152,13 @@ export class Blockchain {
 					throw new Error(`Invalid proof of work at height ${getHeight() + 1}`);
 				}
 				const cumul = getTipWork() + workFromHeader(header);
-				chain.push([hash, header, cumul]);
+				headerChain.push([hash, header, cumul]);
 			}
 
 			const bestHash = getBestHash();
-			locators = [bestHash];
-			console.log(
+			locators[0] = bestHash;
+			locators.length = 1;
+			peer.log(
 				`Downloaded ${getHeight()} headers, latest: ${
 					bytesToHex(getBestHash().toReversed())
 				}, work=${getTipWork()}`,
@@ -163,8 +167,8 @@ export class Blockchain {
 
 		// commit only if cumulative work improved (true "longest" chain)
 		if (getTipWork() > this.getTipWork()) {
-			console.log(`Updating chain: height ${this.getHeight()} → ${chain.length - 1}`);
-			this.headerChain = chain;
+			peer.log(`Updating chain: height ${this.getHeight()} → ${headerChain.length - 1}`);
+			this.headerChain = headerChain;
 
 			this.prevHashToHeader.clear();
 			this.prevHashToHeader.set(bytesToNumberLE(GENESIS_BLOCK_PREV_HASH), 0);
@@ -175,11 +179,11 @@ export class Blockchain {
 				);
 				this.prevHashToHeader.set(bytesToNumberLE(prevLE), height);
 			}
-			console.log(`Chain updated. Height=${this.getHeight()} Work=${this.getTipWork()}`);
+			peer.log(`Chain updated. Height=${this.getHeight()} Work=${this.getTipWork()}`);
 		} else {
-			console.log(`Kept existing tip. Height=${this.getHeight()} Work=${this.getTipWork()}`);
+			peer.log(`Kept existing tip. Height=${this.getHeight()} Work=${this.getTipWork()}`);
 		}
 
-		console.log();
+		peer.log();
 	}
 }

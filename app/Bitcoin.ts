@@ -1,5 +1,5 @@
 import { Peer } from "~/lib/satoshi/p2p/Peer.ts";
-import { VersionMessage } from "./lib/satoshi/p2p/messages/Version.ts";
+import { Version } from "./lib/satoshi/p2p/messages/Version.ts";
 
 export declare namespace Bitcoin {
 	type MessageHandler<T> = {
@@ -21,7 +21,7 @@ export declare namespace Bitcoin {
 }
 
 export class Bitcoin {
-	public readonly version: VersionMessage;
+	public readonly version: Version;
 
 	private readonly handlers: readonly Bitcoin.MessageHandler<unknown>[];
 	private readonly handlersMap: ReadonlyMap<string, Bitcoin.MessageHandler<unknown>>;
@@ -29,7 +29,7 @@ export class Bitcoin {
 	private readonly peers = new Set<Peer>();
 
 	constructor(params: {
-		version: VersionMessage;
+		version: Version;
 		handlers: readonly Bitcoin.MessageHandler<unknown>[];
 	}) {
 		this.version = params.version;
@@ -38,7 +38,7 @@ export class Bitcoin {
 		this.handlersMap = new Map(this.handlers.map((handler) => [handler.message.command, handler] as const));
 	}
 
-	addPeer(peer: Peer) {
+	public addPeer(peer: Peer): void {
 		if (!peer.connected) {
 			throw new Error("Peer is not connected");
 		}
@@ -60,7 +60,7 @@ export class Bitcoin {
 		});
 	}
 
-	removePeer(peer: Peer) {
+	public removePeer(peer: Peer): void {
 		this.peers.delete(peer);
 	}
 }

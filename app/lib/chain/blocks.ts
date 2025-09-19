@@ -281,7 +281,7 @@ async function getTxByTxId(txId: Uint8Array): Promise<TxIndexResult | undefined>
 	return { key, data };
 }
 
-export async function saveBlock(blockHeight: number, block: Block) {
+export async function saveBlock(blockHeight: number, block: Block): Promise<void> {
 	const range = getBlockRange(blockHeight);
 	const blockStore = getBlockStore(range);
 	const txStore = getTxStore(range);

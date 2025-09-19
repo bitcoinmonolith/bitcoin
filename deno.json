@@ -31,7 +31,7 @@
 	"lint": {
 		"rules": {
 			"exclude": ["no-namespace", "no-explicit-any"],
-			"include": ["no-slow-types"]
+			"include": ["no-slow-types", "explicit-module-boundary-types"]
 		}
 	}
 }

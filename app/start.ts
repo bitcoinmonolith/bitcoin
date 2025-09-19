@@ -7,7 +7,7 @@ import { InvHandler } from "~/lib/satoshi/p2p/handlers/InvHandler.ts";
 import { ping, PingHandler } from "~/lib/satoshi/p2p/handlers/PingHandler.ts";
 import { SendCmpctHandler } from "~/lib/satoshi/p2p/handlers/SendCmpctHandler.ts";
 import { handshake, VersionHandler } from "~/lib/satoshi/p2p/handlers/VersionHandler.ts";
-import { VersionMessage } from "~/lib/satoshi/p2p/messages/Version.ts";
+import { Version } from "~/lib/satoshi/p2p/messages/Version.ts";
 import { Peer } from "~/lib/satoshi/p2p/Peer.ts";
 import { Blockchain } from "./lib/chain/Blockchain.ts";
 
@@ -24,18 +24,14 @@ const DNS_SEEDS = [
 const NODE_NETWORK = 1n;
 const NODE_WITNESS = 1n << 3n; // 0x08
 
-const version: VersionMessage = {
+const version: Version = {
 	version: 70015,
 	services: NODE_NETWORK | NODE_WITNESS,
 	timestamp: BigInt(Math.floor(Date.now() / 1000)),
 	recvServices: NODE_NETWORK | NODE_WITNESS,
-	recvIP: hexToBytes("00000000000000000000ffff0a000001"),
-	recvPort: 18333,
 	transServices: NODE_NETWORK | NODE_WITNESS,
-	transIP: hexToBytes("00000000000000000000ffff0a000001"),
-	transPort: 18333,
 	nonce: 987654321n,
-	userAgent: "/Satoshi:BitcoinClient:0.0.1-alpha.1/",
+	userAgent: "/Monolith:0.0.1-preview.1/",
 	startHeight: 150000,
 	relay: false,
 };
@@ -56,7 +52,14 @@ const peer = new Peer("192.168.1.10", 8333, NETWORK_MAGIC);
 
 await peer.connect().then(async () => {
 	bitcoin.addPeer(peer);
-	await handshake(peer, version);
+	peer.remoteHost; // domain or IP
+	await handshake(peer, {
+		...version,
+		recvIP: peer.remoteIp,
+		recvPort: peer.remotePort,
+		transIP: peer.localIp,
+		transPort: peer.localPort,
+	});
 	await ping(peer);
 	await blockchain.downloadHeaders(bitcoin, peer);
 	await blockchain.downloadHeaders(bitcoin, peer);

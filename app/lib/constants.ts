@@ -1,5 +1,5 @@
+import { sha256 } from "@noble/hashes/sha2";
 import { resolve } from "@std/path";
-import { hexToBytes } from "@noble/hashes/utils";
 import { BlockHeader } from "./primitives/BlockHeader.ts";
 
 export const BASE_DATA_DIR = resolve("./data");
@@ -9,10 +9,7 @@ export const MAX_BLOCK_WEIGHT = MAX_BLOCK_BYTES;
 export const WITNESS_DATA_WEIGHT = 1;
 export const NON_WITNESS_DATA_WEIGHT = 4;
 
-export const GENESIS_BLOCK_HASH = hexToBytes("000000000019d6689c085ae165831e934ff763ae46a2a6c172b3f1b60a8ce26f")
-	.reverse();
 export const GENESIS_BLOCK_HEIGHT = 0;
-
 export const GENESIS_BLOCK = new Uint8Array(new SharedArrayBuffer(285));
 GENESIS_BLOCK.set([
 	// --- Block header (80 bytes) ---
@@ -91,3 +88,4 @@ export const GENESIS_BLOCK_PREV_HASH = GENESIS_BLOCK_HEADER.subarray(
 	BlockHeader.shape.version.stride,
 	BlockHeader.shape.version.stride + BlockHeader.shape.prevHash.stride,
 );
+export const GENESIS_BLOCK_HASH = sha256(sha256(GENESIS_BLOCK_HEADER));
