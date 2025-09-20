@@ -1,9 +1,10 @@
+import { concatBytes } from "@noble/hashes/utils";
 import { Codec } from "@nomadshiba/struct-js";
+import { equals } from "@std/bytes";
+import { CompactSize } from "~/lib/CompactSize.ts";
 import { BlockHeader } from "~/lib/primitives/BlockHeader.ts";
 import { Tx } from "~/lib/primitives/Tx.ts";
-import { CompactSize } from "~/lib/CompactSize.ts";
-import { bytesToHex, concatBytes } from "@noble/hashes/utils";
-import { equals } from "@std/bytes";
+import { humanize } from "../logging/human.ts";
 
 export type Block = Readonly<{
 	header: BlockHeader;
@@ -43,8 +44,8 @@ export class BlockCodec extends Codec<Block> {
 			const txBytes = bytes.subarray(offset, offset + newOff);
 			const txEncoded = Tx.encode(tx);
 			if (!equals(txBytes, txEncoded)) {
-				console.error("Original bytes:", bytesToHex(txBytes));
-				console.error("Re-encoded bytes:", bytesToHex(txEncoded));
+				console.error("Original bytes:", humanize(txBytes));
+				console.error("Re-encoded bytes:", humanize(txEncoded));
 				throw new Error("Tx encoding/decoding mismatch");
 			}
 

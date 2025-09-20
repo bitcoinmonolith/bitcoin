@@ -61,6 +61,5 @@ await peer.connect().then(async () => {
 		transPort: peer.localPort,
 	});
 	await ping(peer);
-	await bitcoin.blockchain.downloadHeaders(bitcoin, peer);
-	await bitcoin.blockchain.downloadHeaders(bitcoin, peer);
+	await bitcoin.blockchain.letsTestThis(bitcoin, peer);
 });
