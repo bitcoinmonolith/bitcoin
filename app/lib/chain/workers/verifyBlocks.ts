@@ -7,17 +7,17 @@ import { getTxId, getWTxId } from "../../primitives/Tx.ts";
 import { computeSatoshiMerkleRoot } from "../../satoshi/crypto/merkle.ts";
 
 export type BlocksJobData = {
-	blockBuffers: SharedArrayBuffer[];
+	blockBuffers: Uint8Array<SharedArrayBuffer>[];
 };
 
 export type BlocksJobResult =
-	| { valid: true; txIds: SharedArrayBuffer; wtxIds: SharedArrayBuffer }
+	| { valid: true }
 	| { valid: false; error?: string };
 
 self.onmessage = (event) => {
 	try {
 		const { blockBuffers } = event.data as BlocksJobData;
-		const blocks = blockBuffers.map((buf) => BlockMessage.codec.decode(new Uint8Array(buf)));
+		const blocks = blockBuffers.map((buf) => BlockMessage.codec.decode(buf));
 
 		const txCount = blocks.reduce((sum, block) => sum + block.txs.length, 0);
 
@@ -59,17 +59,10 @@ self.onmessage = (event) => {
 			}
 		}
 
-		const result: BlocksJobResult = {
-			valid: true,
-			txIds: txIdsArr.buffer,
-			wtxIds: wtxIdsArr.buffer,
-		};
+		const result: BlocksJobResult = { valid: true };
 		self.postMessage(result);
 	} catch (err) {
-		const result: BlocksJobResult = {
-			valid: false,
-			error: String(err),
-		};
+		const result: BlocksJobResult = { valid: false, error: String(err) };
 		self.postMessage(result);
 	}
 };

@@ -33,6 +33,9 @@ export class Blockchain {
 
 	private chainLock: LockManager;
 
+	private blockPoolCap = 1000;
+	private blockPool: Uint8Array<SharedArrayBuffer>[] = [];
+
 	constructor(baseDirectory: string, workerCount = navigator.hardwareConcurrency || 4) {
 		console.log(`Using ${workerCount} workers`);
 		this.workerCount = workerCount;
@@ -54,7 +57,8 @@ export class Blockchain {
 	public async letsTestThis(ctx: Bitcoin, peer: Peer): Promise<void> {
 		await this.downloadChain(ctx, peer);
 		await this.downloadChain(ctx, peer); // second time to test chain reorg handling
-		await this.downloadBlocks(ctx, peer);
+		this.processBlockPool();
+		await this.fetchBlocks(peer);
 	}
 
 	private reindexChain(): void {
@@ -169,66 +173,75 @@ export class Blockchain {
 		peer.log();
 	}
 
-	// TODO: big single function for now, trying to understand the flow
-	// This function is just for testing, dont worry about it.
-	private async downloadBlocks(_ctx: Bitcoin, peer: Peer): Promise<void> {
+	private blockHeight = 0;
+	private async fetchBlocks(peer: Peer): Promise<void> {
+		// download blocks until blockHeight is up to date with localChain height
+		// fetch in bulk, and put them in blockPool but if blockPool is full, wait until it has space
 		const bulkCount = 10; // how many blocks to request at once
-		let totalSize = 0;
 
-		const blocks: Uint8Array[] = [];
-		for (let height = 0; height <= this.localChain.getHeight(); height += bulkCount) {
-			const start = performance.now();
-			const length = Math.min(bulkCount, this.localChain.getHeight() - height + 1);
+		while (this.blockHeight <= this.localChain.getHeight()) {
+			if (this.blockPool.length >= this.blockPoolCap) {
+				console.log(`Block pool full (${this.blockPool.length}/${this.blockPoolCap}), waiting...`);
+				await delay(100); // wait until blockPool has space
+				continue;
+			}
+
+			const length = Math.min(bulkCount, this.localChain.getHeight() - this.blockHeight + 1);
 			const getDataMessage: GetDataMessage = { inventory: new Array(length) };
 			for (let i = 0; i < length; i++) {
-				const { hash } = this.localChain.at(height + i)!;
-				getDataMessage.inventory[i] = { type: "WITNESS_BLOCK", hash }; // type 2 = block
+				const { hash } = this.localChain.at(this.blockHeight + i)!;
+				getDataMessage.inventory[i] = { type: "WITNESS_BLOCK", hash };
 			}
-			blocks.length = 0;
+
+			let i = 0;
 			const unlisted = peer.listen((msg) => {
 				if (msg.command !== BlockMessage.command) return;
-				blocks.push(msg.payload);
-				if (blocks.length === length) {
-					return unlisted();
+				const buffer = new Uint8Array(new SharedArrayBuffer(msg.payload.length));
+				buffer.set(msg.payload);
+				this.blockPool.push(buffer);
+				this.blockHeight++;
+				if (++i === length) {
+					unlisted();
+					return;
 				}
 			});
 			await peer.send(GetDataMessage, getDataMessage);
-			while (blocks.length < length) {
-				await delay(0);
-			}
-			if (blocks.length === 0) {
-				peer.log("No blocks received, something is wrong");
-				break;
-			}
-			if (blocks.length !== length) {
-				peer.log(`Expected ${length} blocks, but got ${blocks.length}, something is wrong`);
-				break;
-			}
+			while (i < length) await delay(0);
+		}
+	}
 
-			const bulkSize = blocks.reduce((sum, b) => sum + b.byteLength, 0);
-			totalSize += bulkSize;
-			console.log(
-				"Received",
-				blocks.length,
-				"blocks, verifying...",
-				"height:",
-				height,
-				"size:",
-				(bulkSize / 1024 / 1024).toFixed(2),
-				"MB",
-				"avarage:",
-				(bulkSize / blocks.length / 1024 / 1024).toFixed(2),
-				"MB",
-				"total:",
-				(totalSize / 1024 / 1024 / 1024).toFixed(2),
-				"GB",
-				"speed:",
-				(length / ((performance.now() - start) / 1000)).toFixed(2),
-				"blocks/s",
-				"and",
-				(bulkSize / ((performance.now() - start) / 1000) / 1024 / 1024).toFixed(2),
-				"MB/s",
-			);
+	// TODO: General idea is something like this... but i think i should also instead of slicing from the pool, i should have multiple pools and cycle through them.
+	// This way i wont allocate and copy stuff and also have less fragmentation. idk
+	private async processBlockPool(): Promise<void> {
+		let total = 0;
+		while (true) {
+			if (this.blockPool.length === 0) {
+				await delay(100);
+				continue;
+			}
+			const processCount = Math.min(100, this.blockPool.length);
+			const processCountPerWorker = Math.ceil(processCount / this.workerCount);
+			for (let i = 0; i < this.workerCount; i++) {
+				const processCountPerWorkerFixed = Math.min(processCountPerWorker, this.blockPool.length);
+				if (processCountPerWorkerFixed === 0) break;
+				const blocks = this.blockPool.slice(-processCountPerWorkerFixed);
+				this.blockPool.length -= processCountPerWorkerFixed;
+
+				const start = performance.now();
+				this.blockJobPool.queue({ blockBuffers: blocks }).then(({ data, workerIndex }) => {
+					if (!data.valid) {
+						console.error("Block verification failed:", data.error);
+						throw new Error("Block verification failed");
+					}
+					const duration = performance.now() - start;
+					total += blocks.length;
+					console.log(
+						`[Worker ${workerIndex}]\tVerified ${blocks.length} blocks\tin ${duration.toFixed(2)}ms, avg ${
+							(duration / blocks.length).toFixed(2)
+						}ms/block, total blocks ${total}`,
+					);
+				});
+			}
 		}
 	}
 }
