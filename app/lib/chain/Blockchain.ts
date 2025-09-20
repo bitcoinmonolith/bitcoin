@@ -1,197 +1,24 @@
 import { bytesToNumberLE } from "@noble/curves/abstract/utils";
 import { sha256 } from "@noble/hashes/sha2";
+import { delay } from "@std/async";
 import { equals } from "@std/bytes";
-import { existsSync } from "@std/fs";
-import { dirname, join } from "@std/path";
+import { join } from "@std/path";
 import { Peer } from "~/lib/satoshi/p2p/Peer.ts";
 import { Bitcoin } from "../../Bitcoin.ts";
 import { CompactSize } from "../CompactSize.ts";
-import { GENESIS_BLOCK_HASH, GENESIS_BLOCK_HEADER } from "../constants.ts";
+import { GENESIS_BLOCK_HASH } from "../constants.ts";
 import { JobPool } from "../JobPool.ts";
+import { LockManager } from "../LockManager.ts";
 import { humanize } from "../logging/human.ts";
 import { BlockHeader } from "../primitives/BlockHeader.ts";
+import { BlockMessage } from "../satoshi/p2p/messages/Block.ts";
+import { GetDataMessage } from "../satoshi/p2p/messages/GetData.ts";
 import { GetHeadersMessage } from "../satoshi/p2p/messages/GetHeaders.ts";
 import { HeadersMessage } from "../satoshi/p2p/messages/Headers.ts";
+import { Chain } from "./Chain.ts";
+import { ChainStore } from "./ChainStore.ts";
+import { verifyProofOfWork, workFromHeader } from "./utils.ts";
 import { BlocksJobData, BlocksJobResult } from "./workers/verifyBlocks.ts";
-import { GetDataMessage } from "../satoshi/p2p/messages/GetData.ts";
-import { BlockMessage } from "../satoshi/p2p/messages/Block.ts";
-import { delay } from "@std/async";
-
-const TWO256 = 1n << 256n;
-
-function decodeNBitsFromHeader(header: Uint8Array): number {
-	const nBitsOffset = BlockHeader.shape.version.stride +
-		BlockHeader.shape.prevHash.stride +
-		BlockHeader.shape.merkleRoot.stride +
-		BlockHeader.shape.timestamp.stride;
-	return (
-		header[nBitsOffset]! |
-		(header[nBitsOffset + 1]! << 8) |
-		(header[nBitsOffset + 2]! << 16) |
-		(header[nBitsOffset + 3]! << 24)
-	) >>> 0;
-}
-function nBitsToTarget(nBits: number): bigint {
-	const exponent = nBits >>> 24;
-	const mantissa = nBits & 0x007fffff;
-	return BigInt(mantissa) * (1n << (8n * (BigInt(exponent) - 3n)));
-}
-function workFromHeader(header: Uint8Array): bigint {
-	const target = nBitsToTarget(decodeNBitsFromHeader(header));
-	return target > 0n ? (TWO256 / (target + 1n)) : 0n;
-}
-
-function verifyProofOfWork(header: Uint8Array, hash: Uint8Array): boolean {
-	const nBits = decodeNBitsFromHeader(header);
-	const target = nBitsToTarget(nBits);
-	const hashInt = bytesToNumberLE(hash); // use LE since Bitcoin compares hashes as little-endian numbers
-	return hashInt <= target;
-}
-
-type ChainNode = Readonly<{
-	hash: Uint8Array;
-	header: Uint8Array;
-	cumulativeWork: bigint;
-}>;
-
-interface Unlocker extends Disposable {
-	unlock(): void;
-}
-class LockManager {
-	private current: Promise<void> = Promise.resolve();
-
-	async lock(): Promise<Unlocker> {
-		const { promise, resolve } = Promise.withResolvers<void>();
-		const unlocker: Unlocker = { [Symbol.dispose]: resolve, unlock: resolve };
-		const prev = this.current;
-		this.current = prev.then(() => promise);
-		await prev;
-		return unlocker;
-	}
-}
-
-class Chain implements Iterable<ChainNode> {
-	private chain: ChainNode[];
-
-	constructor(use: ChainNode[]) {
-		this.chain = use;
-	}
-
-	[Symbol.iterator](): ArrayIterator<Readonly<ChainNode>> {
-		return this.chain.values();
-	}
-
-	public entries(): ArrayIterator<[number, Readonly<ChainNode>]> {
-		return this.chain.entries();
-	}
-
-	public values(): ArrayIterator<Readonly<ChainNode>> {
-		return this.chain.values();
-	}
-
-	public getHeight(): number {
-		return this.chain.length - 1;
-	}
-
-	public getTip(): ChainNode {
-		return this.chain.at(-1)!;
-	}
-
-	public truncate(height: number): void {
-		this.chain.length = height + 1;
-	}
-
-	public clear(): void {
-		this.chain.length = 0;
-	}
-
-	public append(...headers: ChainNode[]): void {
-		this.chain.push(...headers);
-	}
-
-	public at(height: number): ChainNode | undefined {
-		return this.chain.at(height);
-	}
-
-	public get length(): number {
-		return this.chain.length;
-	}
-}
-
-class ChainStore {
-	public readonly path: string;
-	constructor(path: string) {
-		this.path = path;
-	}
-
-	public async appendHeaders(headers: ArrayIterator<ChainNode>): Promise<void> {
-		await Deno.mkdir(dirname(this.path), { recursive: true });
-		console.log(`Saving headers to ${this.path}`);
-		const file = await Deno.open(this.path, { append: true, create: true });
-		const writer = file.writable.getWriter();
-		for (const { header } of headers) {
-			await writer.write(header);
-		}
-		file.close();
-		console.log("Headers saved");
-	}
-
-	public async truncate(height: number): Promise<void> {
-		const size = (height + 1) * BlockHeader.stride;
-		const path = join(this.path);
-		const file = await Deno.open(path, { read: true, write: true });
-		await file.truncate(size);
-		file.close();
-		[].entries;
-	}
-
-	public load(chain: Chain): void {
-		const path = this.path;
-		const size = existsSync(path) ? Deno.statSync(path).size : 0;
-		if (size % BlockHeader.stride !== 0) {
-			throw new Error("Invalid headers.dat file, size is not a multiple of header size");
-		}
-
-		chain.clear();
-		chain.append({
-			hash: GENESIS_BLOCK_HASH,
-			header: GENESIS_BLOCK_HEADER,
-			cumulativeWork: workFromHeader(GENESIS_BLOCK_HEADER),
-		});
-
-		if (size > 0) {
-			Deno.mkdirSync(dirname(path), { recursive: true });
-			const file = Deno.openSync(path, { read: true });
-			const headerCount = size / BlockHeader.stride;
-			console.log(`Loading ${headerCount} headers from ${path}`);
-
-			for (let i = 0; i < headerCount; i++) {
-				const header = new Uint8Array(BlockHeader.stride);
-				const bytesRead = file.readSync(header);
-				if (bytesRead !== BlockHeader.stride) {
-					throw new Error("Failed to read full header from headers.dat");
-				}
-				const prevHash = header.subarray(
-					BlockHeader.shape.version.stride,
-					BlockHeader.shape.version.stride + BlockHeader.shape.prevHash.stride,
-				);
-				if (!equals(prevHash, chain.getTip().hash)) {
-					throw new Error(`Headers do not form a chain at height ${i}`);
-				}
-				const hash = sha256(sha256(header));
-				if (!verifyProofOfWork(header, hash)) {
-					throw new Error(`Invalid proof of work at height ${i}`);
-				}
-				const cumulativeWork = chain.getTip().cumulativeWork + workFromHeader(header);
-				chain.append({ hash, header, cumulativeWork });
-			}
-			file.close();
-			console.log(
-				`Loaded ${headerCount} headers. Height=${chain.getHeight()} Work=${chain.getTip().cumulativeWork}`,
-			);
-		}
-	}
-}
 
 export class Blockchain {
 	public readonly baseDirectory: string;
@@ -344,7 +171,7 @@ export class Blockchain {
 
 	// TODO: big single function for now, trying to understand the flow
 	// This function is just for testing, dont worry about it.
-	private async downloadBlocks(ctx: Bitcoin, peer: Peer): Promise<void> {
+	private async downloadBlocks(_ctx: Bitcoin, peer: Peer): Promise<void> {
 		const bulkCount = 10; // how many blocks to request at once
 		let totalSize = 0;
 
