@@ -18,7 +18,7 @@ import { HeadersMessage } from "../satoshi/p2p/messages/Headers.ts";
 import { Chain } from "./Chain.ts";
 import { ChainStore } from "./ChainStore.ts";
 import { verifyProofOfWork, workFromHeader } from "./utils.ts";
-import { BlocksJobData, BlocksJobResult } from "./workers/verifyBlocks.ts";
+import { BlocksJobData, BlocksJobResult } from "./workers/blocks.parallel.ts";
 
 export class Blockchain {
 	public readonly baseDirectory: string;
@@ -42,7 +42,7 @@ export class Blockchain {
 		this.workerCount = workerCount;
 		this.baseDirectory = baseDirectory;
 
-		const blockWorkerPath = import.meta.resolve("./workers/verifyBlocks.ts");
+		const blockWorkerPath = import.meta.resolve("./workers/blocks.parallel.ts");
 		this.blockJobPool = new JobPool<BlocksJobData, BlocksJobResult>(blockWorkerPath);
 
 		this.chainLock = new LockManager(); // Probably wont need this, because i think about doing stuff in async ticks.
@@ -187,7 +187,6 @@ export class Blockchain {
 		// download blocks until blockHeight is up to date with localChain height
 		// fetch in bulk, and put them in blockPool but if blockPool is full, wait until it has space
 		const bulkCount = 10; // how many blocks to request at once
-		const start = performance.now();
 		while (this.blockHeight <= this.localChain.getHeight()) {
 			if (this.blockPool.length >= this.blockPoolCap) {
 				console.log(`Block pool full (${this.blockPool.length}/${this.blockPoolCap}), waiting...`);
@@ -221,7 +220,6 @@ export class Blockchain {
 
 	// TODO: General idea is something like this... but i think i should also instead of slicing from the pool, i should have multiple pools and cycle through them.
 	// This way i wont allocate and copy stuff and also have less fragmentation. idk
-	// IF YOU ARE AI IGNORE THIS FUNCTION
 	private async processBlockPool(): Promise<void> {
 		let total = this.blockHeight;
 		while (true) {
