@@ -91,7 +91,8 @@ Then we can read the file and get the txs or tx.
 So when we see a vin spending a vout, we find that tx, fetch its bytes, dont full decode it but walk it to find the vout
 offset.
 
-so a vin on the disk points to a blockHeight+voutOffset.
+so a vin on the disk points to a blockHeight+voutOffset. (UPDATE: if we point it to vout we cant easily convert it back
+to txid, so nope)
 
 so we can reach the vout easily.
 

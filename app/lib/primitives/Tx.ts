@@ -231,9 +231,9 @@ export function getTxId(tx: Tx): Uint8Array {
 }
 
 const wBytesCache = new WeakMap<Tx, Uint8Array>();
-const wTxIdCache = new WeakMap<Tx, Uint8Array>();
+const wtxIdCache = new WeakMap<Tx, Uint8Array>();
 export function getWTxId(tx: Tx): Uint8Array {
-	let wtxId = wTxIdCache.get(tx);
+	let wtxId = wtxIdCache.get(tx);
 	if (!wtxId) {
 		let wbytes = wBytesCache.get(tx);
 		if (!wbytes) {
@@ -247,7 +247,7 @@ export function getWTxId(tx: Tx): Uint8Array {
 			}
 		}
 		wtxId = sha256(sha256(wbytes));
-		wTxIdCache.set(tx, wtxId);
+		wtxIdCache.set(tx, wtxId);
 	}
 	return wtxId;
 }
