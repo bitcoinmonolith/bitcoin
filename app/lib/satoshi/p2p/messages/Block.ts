@@ -1,4 +1,4 @@
-import { Codec } from "@nomadshiba/struct-js";
+import { Codec } from "@nomadshiba/codec";
 import { Block } from "~/lib/primitives/Block.ts";
 import { PeerMessage } from "~/lib/satoshi/p2p/PeerMessage.ts";
 

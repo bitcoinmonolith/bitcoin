@@ -1,5 +1,6 @@
 export type ChainNode = Readonly<{
-	hash: Uint8Array;
 	header: Uint8Array;
+	hash: Uint8Array;
 	cumulativeWork: bigint;
+	blockLocation: { chunkId: number; offset: number } | null;
 }>;

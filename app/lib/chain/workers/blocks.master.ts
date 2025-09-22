@@ -1,13 +1,13 @@
 /// <reference lib="deno.worker" />
 
-import { bytes, Struct, u16, u32, u64, Vector } from "@nomadshiba/struct-js";
-import { Job, JobPool } from "../../JobPool.ts";
-import { BlocksJobData, BlocksJobResult } from "./blocks.parallel.ts";
-import { Store } from "../../Store.ts";
-import { u24 } from "../../primitives/U24.ts";
+import { bytes, Struct, u16, u32, u64, Vector } from "@nomadshiba/codec";
 import { join } from "@std/path";
+import { JobPool } from "../../JobPool.ts";
+import { Store } from "../../Store.ts";
 import { BASE_DATA_DIR } from "../../constants.ts";
 import { bytes32 } from "../../primitives/Bytes32.ts";
+import { u24 } from "../../primitives/U24.ts";
+import { BlocksJobData, BlocksJobResult } from "./blocks.parallel.ts";
 
 const BASE_BLOCK_DIR = join(BASE_DATA_DIR, "blocks");
 

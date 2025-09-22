@@ -6,7 +6,7 @@ import { join } from "@std/path";
 import { Peer } from "~/lib/satoshi/p2p/Peer.ts";
 import { Bitcoin } from "../../Bitcoin.ts";
 import { CompactSize } from "../CompactSize.ts";
-import { GENESIS_BLOCK_HASH } from "../constants.ts";
+import { GENESIS_BLOCK_HASH, GENESIS_BLOCK_HEADER } from "../constants.ts";
 import { JobPool } from "../JobPool.ts";
 import { LockManager } from "../LockManager.ts";
 import { humanize } from "../logging/human.ts";
@@ -51,15 +51,26 @@ export class Blockchain {
 		this.chainStore = new ChainStore(join(this.baseDirectory, "headers.dat"));
 		this.hashToHeight = new Map();
 		this.prevHashToHeight = new Map();
-		this.chainStore.load(this.localChain);
-		this.reindexChain();
 	}
 
-	public async letsTestThis(ctx: Bitcoin, peer: Peer): Promise<void> {
+	public async letsTryThis(ctx: Bitcoin, peer: Peer): Promise<void> {
+		this.chainStore.load(this.localChain);
+		if (this.localChain.length === 0) {
+			const genesisWork = workFromHeader(GENESIS_BLOCK_HASH);
+			this.localChain.append({
+				header: GENESIS_BLOCK_HEADER,
+				hash: GENESIS_BLOCK_HASH,
+				cumulativeWork: genesisWork,
+				blockLocation: null,
+			});
+			await this.chainStore.append(this.localChain.values());
+			console.log(`Initialized new chain with genesis block, work=${genesisWork}`);
+		}
+		this.reindexChain();
 		await this.downloadChain(ctx, peer);
 		await this.downloadChain(ctx, peer); // second time to test chain reorg handling
 		this.processBlockPool();
-		await this.downloadBlocks(peer);
+		// await this.downloadBlocks(peer);
 	}
 
 	private reindexChain(): void {
@@ -145,7 +156,7 @@ export class Blockchain {
 					break syncToPeerTip;
 				}
 				const cumulativeWork = peerChain.getTip().cumulativeWork + workFromHeader(header);
-				peerChain.append({ hash, header, cumulativeWork });
+				peerChain.append({ hash, header, cumulativeWork, blockLocation: null });
 			}
 
 			locators[0] = peerChain.getTip().hash;
@@ -163,9 +174,9 @@ export class Blockchain {
 			if (chainSplit) {
 				await this.chainStore.truncate(chainSplit.commonHeight);
 				const commonLength = chainSplit.commonHeight + 1;
-				await this.chainStore.appendHeaders(peerChain.values().drop(commonLength));
+				await this.chainStore.append(peerChain.values().drop(commonLength));
 			} else {
-				await this.chainStore.appendHeaders(peerChain.values().drop(this.localChain.length));
+				await this.chainStore.append(peerChain.values().drop(this.localChain.length));
 			}
 
 			this.localChain = peerChain;

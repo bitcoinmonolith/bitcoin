@@ -1,5 +1,5 @@
 import { sha256 } from "@noble/hashes/sha2";
-import { Codec } from "@nomadshiba/struct-js";
+import { Codec } from "@nomadshiba/codec";
 
 // --- small fast utils ---
 const ASCII = new TextDecoder("ascii");

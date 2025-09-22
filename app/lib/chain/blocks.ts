@@ -1,7 +1,7 @@
 // This is an old file toying around file, i used for understanding how to store blocks and txs
 // It is not used in the main codebase, but kept for reference until we are sure we don't need it anymore
 
-import { bool, bytes, Codec, i32, Struct, Tuple, u16, u32, u64, Vector } from "@nomadshiba/struct-js";
+import { bool, bytes, Codec, i32, Struct, Tuple, u16, u32, u64, Vector } from "@nomadshiba/codec";
 import { equals } from "@std/bytes";
 import { join } from "@std/path";
 import { BASE_DATA_DIR } from "~/lib/constants.ts";

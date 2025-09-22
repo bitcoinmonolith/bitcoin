@@ -61,5 +61,5 @@ await peer.connect().then(async () => {
 		transPort: peer.localPort,
 	});
 	await ping(peer);
-	await bitcoin.blockchain.letsTestThis(bitcoin, peer);
+	await bitcoin.blockchain.letsTryThis(bitcoin, peer);
 });

@@ -1,12 +1,17 @@
-import { dirname, join } from "@std/path";
-import { ChainNode } from "./ChainNode.ts";
-import { BlockHeader } from "../primitives/BlockHeader.ts";
-import { existsSync } from "@std/fs";
-import { Chain } from "./Chain.ts";
-import { GENESIS_BLOCK_HASH, GENESIS_BLOCK_HEADER } from "../constants.ts";
-import { verifyProofOfWork, workFromHeader } from "./utils.ts";
 import { sha256 } from "@noble/hashes/sha2";
+import { bool, Bytes, Struct, u16, u32 } from "@nomadshiba/codec";
 import { equals } from "@std/bytes";
+import { existsSync } from "@std/fs";
+import { dirname, join } from "@std/path";
+import { BlockHeader } from "../primitives/BlockHeader.ts";
+import { Chain } from "./Chain.ts";
+import { ChainNode } from "./ChainNode.ts";
+import { verifyProofOfWork, workFromHeader } from "./utils.ts";
+
+const Item = new Struct({
+	header: new Bytes(BlockHeader.stride),
+	blockLocation: new Struct({ enabled: bool, chunkId: u16, offset: u32 }),
+});
 
 export class ChainStore {
 	public readonly path: string;
@@ -14,20 +19,27 @@ export class ChainStore {
 		this.path = path;
 	}
 
-	public async appendHeaders(headers: ArrayIterator<ChainNode>): Promise<void> {
+	public async append(headers: ArrayIterator<ChainNode>): Promise<void> {
 		await Deno.mkdir(dirname(this.path), { recursive: true });
 		console.log(`Saving headers to ${this.path}`);
 		const file = await Deno.open(this.path, { append: true, create: true });
 		const writer = file.writable.getWriter();
-		for (const { header } of headers) {
-			await writer.write(header);
+		for (const { header, blockLocation } of headers) {
+			await writer.write(
+				Item.encode({
+					header,
+					blockLocation: blockLocation
+						? { enabled: true, ...blockLocation }
+						: { enabled: false, chunkId: 0, offset: 0 },
+				}),
+			);
 		}
 		file.close();
 		console.log("Headers saved");
 	}
 
 	public async truncate(height: number): Promise<void> {
-		const size = (height + 1) * BlockHeader.stride;
+		const size = (height + 1) * Item.stride;
 		const path = join(this.path);
 		const file = await Deno.open(path, { read: true, write: true });
 		await file.truncate(size);
@@ -38,29 +50,25 @@ export class ChainStore {
 	public load(chain: Chain): void {
 		const path = this.path;
 		const size = existsSync(path) ? Deno.statSync(path).size : 0;
-		if (size % BlockHeader.stride !== 0) {
+		if (size % Item.stride !== 0) {
 			throw new Error("Invalid headers.dat file, size is not a multiple of header size");
 		}
 
 		chain.clear();
-		chain.append({
-			hash: GENESIS_BLOCK_HASH,
-			header: GENESIS_BLOCK_HEADER,
-			cumulativeWork: workFromHeader(GENESIS_BLOCK_HEADER),
-		});
 
 		if (size > 0) {
 			Deno.mkdirSync(dirname(path), { recursive: true });
 			const file = Deno.openSync(path, { read: true });
-			const headerCount = size / BlockHeader.stride;
+			const headerCount = size / Item.stride;
 			console.log(`Loading ${headerCount} headers from ${path}`);
 
 			for (let i = 0; i < headerCount; i++) {
-				const header = new Uint8Array(BlockHeader.stride);
-				const bytesRead = file.readSync(header);
-				if (bytesRead !== BlockHeader.stride) {
+				const itemBytes = new Uint8Array(Item.stride);
+				const bytesRead = file.readSync(itemBytes);
+				if (bytesRead !== Item.stride) {
 					throw new Error("Failed to read full header from headers.dat");
 				}
+				const { header, blockLocation } = Item.decode(itemBytes);
 				const prevHash = header.subarray(
 					BlockHeader.shape.version.stride,
 					BlockHeader.shape.version.stride + BlockHeader.shape.prevHash.stride,
@@ -73,7 +81,14 @@ export class ChainStore {
 					throw new Error(`Invalid proof of work at height ${i}`);
 				}
 				const cumulativeWork = chain.getTip().cumulativeWork + workFromHeader(header);
-				chain.append({ hash, header, cumulativeWork });
+				chain.append({
+					hash,
+					header,
+					cumulativeWork,
+					blockLocation: blockLocation.enabled
+						? { chunkId: blockLocation.chunkId, offset: blockLocation.offset }
+						: null,
+				});
 			}
 			file.close();
 			console.log(

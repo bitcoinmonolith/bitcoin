@@ -1,5 +1,5 @@
 import { concatBytes } from "@noble/hashes/utils";
-import { Codec } from "@nomadshiba/struct-js";
+import { Codec } from "@nomadshiba/codec";
 import { equals } from "@std/bytes";
 import { CompactSize } from "~/lib/CompactSize.ts";
 import { BlockHeader } from "~/lib/primitives/BlockHeader.ts";

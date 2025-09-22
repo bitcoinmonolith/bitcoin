@@ -1,4 +1,12 @@
+import { BlockHeader } from "../primitives/BlockHeader.ts";
 import { ChainNode } from "./ChainNode.ts";
+
+const EMPTY_NODE: ChainNode = {
+	header: new Uint8Array(BlockHeader.stride),
+	hash: new Uint8Array(32),
+	cumulativeWork: 0n,
+	blockLocation: null,
+};
 
 export class Chain implements Iterable<ChainNode> {
 	private chain: ChainNode[];
@@ -24,7 +32,7 @@ export class Chain implements Iterable<ChainNode> {
 	}
 
 	public getTip(): ChainNode {
-		return this.chain.at(-1)!;
+		return this.chain.at(-1) ?? EMPTY_NODE;
 	}
 
 	public truncate(height: number): void {

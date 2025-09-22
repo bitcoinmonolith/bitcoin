@@ -1,4 +1,4 @@
-import { Codec } from "@nomadshiba/struct-js";
+import { Codec } from "@nomadshiba/codec";
 import { concat } from "@std/bytes";
 import { CompactSize } from "~/lib/CompactSize.ts";
 import { BytesView } from "~/lib/BytesView.ts";

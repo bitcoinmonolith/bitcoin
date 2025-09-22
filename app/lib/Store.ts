@@ -1,6 +1,6 @@
 import { DB as Sqlite } from "@deno/sqlite";
 import { bytesToHex, hexToBytes } from "@noble/hashes/utils";
-import { Codec } from "@nomadshiba/struct-js";
+import { Codec } from "@nomadshiba/codec";
 import { DenoSqliteDialect } from "@soapbox/kysely-deno-sqlite";
 import { dirname, join } from "@std/path";
 import { CompiledQuery, Kysely, Transaction } from "kysely";

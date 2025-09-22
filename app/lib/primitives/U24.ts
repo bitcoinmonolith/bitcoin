@@ -1,4 +1,4 @@
-import { Codec } from "@nomadshiba/struct-js";
+import { Codec } from "@nomadshiba/codec";
 
 export class U24 extends Codec<number> {
 	public readonly stride = 3;

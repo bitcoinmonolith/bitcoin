@@ -1,4 +1,4 @@
-import { Codec } from "@nomadshiba/struct-js";
+import { Codec } from "@nomadshiba/codec";
 
 export class PeerMessage<T> {
 	public readonly command: string;
