@@ -2,8 +2,8 @@ import { concatBytes } from "@noble/hashes/utils";
 import { Codec } from "@nomadshiba/codec";
 import { equals } from "@std/bytes";
 import { CompactSize } from "~/lib/CompactSize.ts";
-import { BlockHeader } from "~/lib/satoshi/p2p/primitives/BlockHeader.ts";
-import { Tx } from "~/lib/satoshi/p2p/primitives/Tx.ts";
+import { BlockHeader } from "~/lib/satoshi/primitives/BlockHeader.ts";
+import { Tx } from "~/lib/satoshi/primitives/Tx.ts";
 import { humanize } from "~/lib/logging/human.ts";
 
 export type Block = Readonly<{

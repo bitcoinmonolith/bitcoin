@@ -1,5 +1,5 @@
 import { bytesToNumberLE } from "@noble/curves/abstract/utils";
-import { BlockHeader } from "~/lib/satoshi/p2p/primitives/BlockHeader.ts";
+import { BlockHeader } from "~/lib/satoshi/primitives/BlockHeader.ts";
 
 const TWO256 = 1n << 256n;
 

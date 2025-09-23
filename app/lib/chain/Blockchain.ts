@@ -10,7 +10,7 @@ import { GENESIS_BLOCK_HASH, GENESIS_BLOCK_HEADER } from "~/lib/constants.ts";
 import { JobPool } from "~/lib/JobPool.ts";
 import { LockManager } from "~/lib/LockManager.ts";
 import { humanize } from "~/lib/logging/human.ts";
-import { BlockHeader } from "~/lib/satoshi/p2p/primitives/BlockHeader.ts";
+import { BlockHeader } from "~/lib/satoshi/primitives/BlockHeader.ts";
 import { BlockMessage } from "~/lib/satoshi/p2p/messages/Block.ts";
 import { GetDataMessage } from "~/lib/satoshi/p2p/messages/GetData.ts";
 import { GetHeadersMessage } from "~/lib/satoshi/p2p/messages/GetHeaders.ts";

@@ -1,4 +1,4 @@
-import { BlockHeader } from "~/lib/satoshi/p2p/primitives/BlockHeader.ts";
+import { BlockHeader } from "~/lib/satoshi/primitives/BlockHeader.ts";
 import { ChainNode } from "~/lib/chain/ChainNode.ts";
 
 const EMPTY_NODE: ChainNode = {

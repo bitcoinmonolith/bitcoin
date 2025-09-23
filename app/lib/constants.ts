@@ -1,6 +1,6 @@
 import { sha256 } from "@noble/hashes/sha2";
 import { resolve } from "@std/path";
-import { BlockHeader } from "~/lib/satoshi/p2p/primitives/BlockHeader.ts";
+import { BlockHeader } from "~/lib/satoshi/primitives/BlockHeader.ts";
 
 export const BASE_DATA_DIR = resolve("./data");
 

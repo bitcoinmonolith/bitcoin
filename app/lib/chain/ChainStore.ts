@@ -3,7 +3,7 @@ import { Bytes } from "@nomadshiba/codec";
 import { equals } from "@std/bytes";
 import { existsSync } from "@std/fs";
 import { dirname, join } from "@std/path";
-import { BlockHeader } from "~/lib/satoshi/p2p/primitives/BlockHeader.ts";
+import { BlockHeader } from "~/lib/satoshi/primitives/BlockHeader.ts";
 import { Chain } from "~/lib/chain/Chain.ts";
 import { ChainNode } from "~/lib/chain/ChainNode.ts";
 import { verifyProofOfWork, workFromHeader } from "~/lib/chain/utils.ts";
