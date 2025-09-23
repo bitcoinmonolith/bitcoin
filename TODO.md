@@ -1,43 +1,6 @@
-## TODO
-
-- [x] Satoshi P2P communication protocol
-- [x] Encode/Decode Blocks and Transactions
-- [x] Satoshi's Merkle root computation
-- [ ] Storage layer using KV sqlite3 files, and have in-memory cache for everything.
-  - [ ] Storing blocks raw, but use a different codec that uses internal ids for TXs and prevouts to save space.
-  - [ ] Blocks are stored by height in chunks, so we can know where to look for them.
-  - [ ] Another thing is instead of having internal ids for txs we can also use their offset in the block while pointing
-        to them.
-  - [ ] We still have to store txIds and block hashes though, so we can find them. BUT instead of storing full hashes we
-        can store the shortest unique prefix. once we find them by prefix we can rehash the full thing to make sure it's
-        the same. Of course these are also cashed in storage and memory with a size limit.
-  - [ ] prev vouts can also be pointed at by block height + vout byte offset, instead of txId + vout index.
-  - [ ] UTXO is not stored separately, instead we just mark the vout as spent in the block it was created in. This way
-        we dont need extra storage for UTXO set.
-  - [ ] Of course we should have an api that doesn't care about any of this internal stuff, and just works and caches
-        everything silently, with a size limit.
-  - [ ] The goal is being able to store the entire blockchain as of September 2025 in less than ~200GB, while being able
-        to validate everything from genesis to the tip. And indexing everything at the same time.
-  - [ ] We should be able to support all lookups, all electrum endpoints, and we should be able to build something like
-        mempool-space on top of this.
-- [ ] Basic Block and TX validation
-  - [ ] Check TX inputs are unspent
-  - [ ] Check if TX inputs value >= outputs value (remaining is fee)
-  - [ ] Check TX finality (nLockTime and nSequence)
-  - [ ] Check Block header POW
-  - [ ] Check Block timestamp
-  - [ ] Check Block size limits
-  - [ ] Check Block transactions are valid
-  - [ ] Check Block transactions are not duplicated
-  - [ ] Check Block Merkle root
-  - [ ] Check Block weight (SegWit)
-  - [ ] etc.
-- [ ] OPCODES. We should be able to run a script interpreter and validate scripts.
-- [ ] P2P handling, TX and Block propagation, basic anti-DoS, mempool management, etc.
-- [ ] Basic first interfaces for querying the chain, mempool, and peers.
-- [ ] and more to come...
-
 ## BIPs Implementation
+
+Not all of these are required but gonna go over these at some point. 
 
 - [ ] [BIP 9](https://github.com/DeepDoge/bitcoin-bips/blob/master/bip-0009.mediawiki) – Informational – Version bits
       with timeout and delay
