@@ -55,13 +55,12 @@ export class Blockchain {
 
 	public async letsTryThis(ctx: Bitcoin, peer: Peer): Promise<void> {
 		this.chainStore.load(this.localChain);
-		if (this.localChain.length === 0) {
+		if (this.localChain.length() === 0) {
 			const genesisWork = workFromHeader(GENESIS_BLOCK_HASH);
 			this.localChain.append({
 				header: GENESIS_BLOCK_HEADER,
 				hash: GENESIS_BLOCK_HASH,
 				cumulativeWork: genesisWork,
-				blockLocation: null,
 			});
 			await this.chainStore.append(this.localChain.values());
 			console.log(`Initialized new chain with genesis block, work=${genesisWork}`);
@@ -92,7 +91,7 @@ export class Blockchain {
 
 		const locators: Uint8Array[] = [];
 		let step = 1;
-		let index = peerChain.getHeight();
+		let index = peerChain.height();
 		while (index >= 0) {
 			locators.push(peerChain.at(index)!.hash);
 			if (locators.length >= 10) step <<= 1;
@@ -121,7 +120,7 @@ export class Blockchain {
 				countSize + BlockHeader.shape.version.stride + BlockHeader.shape.prevHash.stride,
 			);
 
-			if (!equals(firstPrevHash, peerChain.getTip().hash)) {
+			if (!equals(firstPrevHash, peerChain.tip().hash)) {
 				if (chainSplit) {
 					throw new Error("Chain split twice from same peer, aborting. Peer's own chain changed?");
 				}
@@ -134,13 +133,13 @@ export class Blockchain {
 			for (let i = 0; i < count; i++) {
 				const headerOffset = countSize + i * (BlockHeader.stride + 1);
 				const header = headers.subarray(headerOffset, headerOffset + BlockHeader.stride);
-				const height = peerChain.getHeight() + 1;
+				const height = peerChain.height() + 1;
 				const prevHash = header.subarray(
 					BlockHeader.shape.version.stride,
 					BlockHeader.shape.version.stride + BlockHeader.shape.prevHash.stride,
 				);
-				if (!equals(prevHash, peerChain.getTip().hash)) {
-					peer.logWarn(humanize(prevHash), humanize(peerChain.getTip().hash));
+				if (!equals(prevHash, peerChain.tip().hash)) {
+					peer.logWarn(humanize(prevHash), humanize(peerChain.tip().hash));
 					peer.logWarn(`Headers do not form a chain at height ${height}`);
 					// act as if we reached the tip, accept the partial chain in case cumulative work is higher than our local anyway
 					break syncToPeerTip;
@@ -155,38 +154,38 @@ export class Blockchain {
 					peer.logWarn(`Invalid proof of work at height ${height}`);
 					break syncToPeerTip;
 				}
-				const cumulativeWork = peerChain.getTip().cumulativeWork + workFromHeader(header);
-				peerChain.append({ hash, header, cumulativeWork, blockLocation: null });
+				const cumulativeWork = peerChain.tip().cumulativeWork + workFromHeader(header);
+				peerChain.append({ hash, header, cumulativeWork });
 			}
 
-			locators[0] = peerChain.getTip().hash;
+			locators[0] = peerChain.tip().hash;
 			locators.length = 1;
 			peer.log(
-				`Downloaded ${peerChain.getHeight()} headers, latest: ${
-					humanize(peerChain.getTip().hash)
-				}, work=${peerChain.getTip().cumulativeWork}`,
+				`Downloaded ${peerChain.height()} headers, latest: ${
+					humanize(peerChain.tip().hash)
+				}, work=${peerChain.tip().cumulativeWork}`,
 			);
 		}
 
 		// commit only if cumulative work improved (true "longest" chain)
-		if (peerChain.getTip().cumulativeWork > this.localChain.getTip().cumulativeWork) {
-			peer.log(`Updating chain: height ${this.localChain.getHeight()} → ${peerChain.length - 1}`);
+		if (peerChain.tip().cumulativeWork > this.localChain.tip().cumulativeWork) {
+			peer.log(`Updating chain: height ${this.localChain.height()} → ${peerChain.length() - 1}`);
 			if (chainSplit) {
 				await this.chainStore.truncate(chainSplit.commonHeight);
 				const commonLength = chainSplit.commonHeight + 1;
 				await this.chainStore.append(peerChain.values().drop(commonLength));
 			} else {
-				await this.chainStore.append(peerChain.values().drop(this.localChain.length));
+				await this.chainStore.append(peerChain.values().drop(this.localChain.length()));
 			}
 
 			this.localChain = peerChain;
 			this.reindexChain();
 			peer.log(
-				`Chain updated. Height=${this.localChain.getHeight()} Work=${this.localChain.getTip().cumulativeWork}`,
+				`Chain updated. Height=${this.localChain.height()} Work=${this.localChain.tip().cumulativeWork}`,
 			);
 		} else {
 			peer.log(
-				`Kept existing tip. Height=${this.localChain.getHeight()} Work=${this.localChain.getTip().cumulativeWork}`,
+				`Kept existing tip. Height=${this.localChain.height()} Work=${this.localChain.tip().cumulativeWork}`,
 			);
 		}
 
@@ -198,14 +197,14 @@ export class Blockchain {
 		// download blocks until blockHeight is up to date with localChain height
 		// fetch in bulk, and put them in blockPool but if blockPool is full, wait until it has space
 		const bulkCount = 10; // how many blocks to request at once
-		while (this.blockHeight <= this.localChain.getHeight()) {
+		while (this.blockHeight <= this.localChain.height()) {
 			if (this.blockPool.length >= this.blockPoolCap) {
 				console.log(`Block pool full (${this.blockPool.length}/${this.blockPoolCap}), waiting...`);
 				await delay(100); // wait until blockPool has space
 				continue;
 			}
 
-			const length = Math.min(bulkCount, this.localChain.getHeight() - this.blockHeight + 1);
+			const length = Math.min(bulkCount, this.localChain.height() - this.blockHeight + 1);
 			const getDataMessage: GetDataMessage = { inventory: new Array(length) };
 			for (let i = 0; i < length; i++) {
 				const { hash } = this.localChain.at(this.blockHeight + i)!;

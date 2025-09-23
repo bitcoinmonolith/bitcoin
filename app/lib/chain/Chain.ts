@@ -5,7 +5,6 @@ const EMPTY_NODE: ChainNode = {
 	header: new Uint8Array(BlockHeader.stride),
 	hash: new Uint8Array(32),
 	cumulativeWork: 0n,
-	blockLocation: null,
 };
 
 export class Chain implements Iterable<ChainNode> {
@@ -27,11 +26,11 @@ export class Chain implements Iterable<ChainNode> {
 		return this.chain.values();
 	}
 
-	public getHeight(): number {
+	public height(): number {
 		return this.chain.length - 1;
 	}
 
-	public getTip(): ChainNode {
+	public tip(): ChainNode {
 		return this.chain.at(-1) ?? EMPTY_NODE;
 	}
 
@@ -51,7 +50,7 @@ export class Chain implements Iterable<ChainNode> {
 		return this.chain.at(height);
 	}
 
-	public get length(): number {
+	public length(): number {
 		return this.chain.length;
 	}
 }

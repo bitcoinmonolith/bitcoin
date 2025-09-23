@@ -3,7 +3,7 @@
 import { bytes, Struct, u16, u32, u64, Vector } from "@nomadshiba/codec";
 import { join } from "@std/path";
 import { JobPool } from "../../JobPool.ts";
-import { Store } from "../../Store.ts";
+import { KV } from "../../KV.ts";
 import { BASE_DATA_DIR } from "../../constants.ts";
 import { bytes32 } from "../../primitives/Bytes32.ts";
 import { u24 } from "../../primitives/U24.ts";
@@ -38,15 +38,6 @@ const StoredTx = new Struct({
 	vout: new Vector(StoredTxOutput),
 	vin: new Vector(StoredTxInput),
 });
-
-const blockLocationIndex = new Store(
-	[u24],
-	new Struct({
-		chunkId: u16,
-		offset: u32,
-	}),
-	{ base: BASE_BLOCK_DIR, name: "block.index" },
-);
 
 self.onmessage = async (event) => {
 };

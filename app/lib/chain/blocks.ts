@@ -11,7 +11,7 @@ import { getTxId } from "~/lib/primitives/Tx.ts";
 import { u24 } from "~/lib/primitives/U24.ts";
 import { SequenceLock } from "~/lib/primitives/weirdness/SequenceLock.ts";
 import { TimeLock } from "~/lib/primitives/weirdness/TimeLock.ts";
-import { Store } from "~/lib/Store.ts";
+import { KV } from "../KV.ts";
 import { humanize } from "../logging/human.ts";
 
 /*
@@ -107,13 +107,13 @@ function getBlockRange(blockHeight: number): BlockRange {
 type LocalTxKey = Tuple.Infer<typeof LocalTxKey>;
 const LocalTxKey = [u16, u24] as const; // Local block height within the chunk, tx index within the block
 
-const txStoreCache: Store<LocalTxKey, TxData>[] = [];
+const txStoreCache: KV<LocalTxKey, TxData>[] = [];
 function getTxStore(range: BlockRange) {
 	const name = `blocks[${range.start},${range.end}]-txs`;
 	const index = range.start / BLOCKS_PER_CHUNK;
 	let store = txStoreCache[index];
 	if (!store) {
-		store = new Store(LocalTxKey, TxData, { base: BLOCKS_BASE_DIR, name });
+		store = new KV(LocalTxKey, TxData, { base: BLOCKS_BASE_DIR, name });
 		txStoreCache[index] = store;
 	}
 	return store;
@@ -122,13 +122,13 @@ function getTxStore(range: BlockRange) {
 type LocalBlockKey = Tuple.Infer<typeof LocalBlockKey>;
 const LocalBlockKey = [u16] as const; // Local height within the chunk
 
-const blockStoreCache: Store<LocalBlockKey, BlockData>[] = [];
+const blockStoreCache: KV<LocalBlockKey, BlockData>[] = [];
 function getBlockStore(range: BlockRange) {
 	const name = `blocks[${range.start},${range.end}]`;
 	const index = range.start / BLOCKS_PER_CHUNK;
 	let store = blockStoreCache[index];
 	if (!store) {
-		store = new Store(LocalBlockKey, BlockData, { base: BLOCKS_BASE_DIR, name });
+		store = new KV(LocalBlockKey, BlockData, { base: BLOCKS_BASE_DIR, name });
 		blockStoreCache[index] = store;
 	}
 	return store;
@@ -146,7 +146,7 @@ type TxKey = Tuple.Infer<typeof TxKey>;
 const TxKey = [u24, u24] as const;
 
 // TODO: Later make this multiple files based on prefix
-const txIdIndexStore = new Store([bytes], new Tuple(TxKey), {
+const txIdIndexStore = new KV([bytes], new Tuple(TxKey), {
 	base: BASE_DATA_DIR,
 	name: "txId-index",
 });
