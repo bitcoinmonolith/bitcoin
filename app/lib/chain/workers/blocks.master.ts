@@ -1,16 +1,54 @@
 /// <reference lib="deno.worker" />
 
-import { bool, bytes, Struct, u16, u32, Vector } from "@nomadshiba/codec";
+import { bool, bytes, i32, Struct, u16, u32, Vector } from "@nomadshiba/codec";
 import { join } from "@std/path";
 import { JobPool } from "../../JobPool.ts";
 import { BASE_DATA_DIR } from "../../constants.ts";
 import { bytes32 } from "../../primitives/Bytes32.ts";
 import { u56 } from "../../primitives/U56.ts";
 import { BlocksJobData, BlocksJobResult } from "./blocks.parallel.ts";
+import { u24 } from "../../primitives/U24.ts";
 
 const BASE_BLOCK_DIR = join(BASE_DATA_DIR, "blocks");
 
 const jobPool = new JobPool<BlocksJobData, BlocksJobResult>(import.meta.resolve("./blocks.parallel.ts"));
+
+/*
+	Blocks are chunked, chunks are not based on height, but on size.
+	It will proably will be 1GB per chunk, chunks need to be big enough, so chunkId can be u16.
+	And chunks can should be small enough so maybe we can compress them in the future. (a compression that optimizes for speed)
+	We have a fixed sized BlockHeightIndex, that we can directly check what chunkId and offset a block or tx is at.
+
+	Chunk structure looks like this:
+	[Tx Count: u24]
+	[StoredCoinbaseTx]
+	[StoredTx]
+	[StoredTx]
+	...
+	[StoredTx]
+	[Tx Count: u24]
+	[StoredCoinbaseTx]
+	[StoredTx]
+	[StoredTx]
+	...
+
+	So as you can see, it only stores the txs,
+	because we already store the headers in headers.dat file.
+	And also headers always live in memory as well.
+
+	So BlockHeightIndex points to the start of Tx Count of the chunk.
+	That way a block can know how many of the following txs are its txs.
+
+	vin pointing to prevout dont care about the block,
+	so it directly points to chunkId and offset of the tx.
+	it doesnt point to the output directly,
+	because we need to know the txId as well,
+	in order to reconstruct the on wire tx.
+
+	Max chunk size can be changed dynamically in the future,
+	and wouldn't require a reindex,
+	because it only decides when to start a new chunk.
+*/
 
 const StoredTxOutput = new Struct({
 	spent: bool,
@@ -31,7 +69,7 @@ const StoredTxInput = new Struct({
 			chunkId: u16,
 			offset: u32,
 		}),
-		vout: u16,
+		vout: u24, // should be enough for vout based on max block weight
 	}),
 	sequence: u32,
 	scriptSig: bytes, // TODO: have internal id or something like that, they are usually repeated, maybe have a flag and point to the first one?
@@ -48,10 +86,19 @@ const StoredTx = new Struct({
 	// so this is only cheaper because there are more inputs spending from the same tx.
 	// also, this method combined with offset pointing in the input, faster anyway.
 	txId: bytes32,
-	version: u32,
+	version: i32,
 	lockTime: u32,
 	vout: new Vector(StoredTxOutput),
 	vin: new Vector(StoredTxInput),
+});
+
+const StoredCoinbaseTx = new Struct({
+	txId: bytes32,
+	version: i32,
+	lockTime: u32,
+	sequence: u32,
+	coinbase: bytes,
+	vout: new Vector(StoredTxOutput),
 });
 
 self.onmessage = async (event) => {
