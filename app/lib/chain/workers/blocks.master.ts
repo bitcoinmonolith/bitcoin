@@ -21,6 +21,13 @@ const StoredTxOutput = new Struct({
 const StoredTxInput = new Struct({
 	prevOut: new Struct({
 		tx: new Struct({
+			// I thought about pointing to blockHeight and blockOffset instead, 
+			// because offset would be 24bit instead. 
+			// but then i have to point to the blockHeight instead of chunkId,
+			// meaning have to use u24 for blockHeight and u24 for blockOffset
+			// but 16+32=24+24, so it takes the same space.
+			// and this way i can directly go to the tx, 
+			// instead of checking where the block is first
 			chunkId: u16,
 			offset: u32,
 		}),
