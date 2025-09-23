@@ -1,6 +1,6 @@
 /// <reference lib="deno.worker" />
 
-import { bool, bytes, Struct, u16, u32, u64, Vector } from "@nomadshiba/codec";
+import { bool, bytes, Struct, u16, u32, Vector } from "@nomadshiba/codec";
 import { join } from "@std/path";
 import { JobPool } from "../../JobPool.ts";
 import { BASE_DATA_DIR } from "../../constants.ts";
@@ -33,18 +33,23 @@ const StoredTxInput = new Struct({
 		}),
 		vout: u16,
 	}),
-	sequence: u64,
-	scriptSig: bytes,
-	witness: bytes,
+	sequence: u32,
+	scriptSig: bytes, // TODO: have internal id or something like that, they are usually repeated, maybe have a flag and point to the first one?
+	witness: bytes, // TODO: maybe seperate witness to another file? idk
 });
 
 const StoredTx = new Struct({
 	// This is the only place where we store the full txId,
 	// if we dont store it anywhere else, in order to find the txId,
 	// we have to hash every tx until the coinbase txs of the utxo we are spending.
+	// this is only cheaper because txs usually have 2 or more outputs, including the change output,
+	// so you at least repeat same txid twice in the inputs.
+	// BUT if you dont spend it, and store the txid on the input you dont need the txid at all.
+	// so this is only cheaper because there are more inputs spending from the same tx.
+	// also, this method combined with offset pointing in the input, faster anyway.
 	txId: bytes32,
 	version: u32,
-	lockTime: u64,
+	lockTime: u32,
 	vout: new Vector(StoredTxOutput),
 	vin: new Vector(StoredTxInput),
 });
