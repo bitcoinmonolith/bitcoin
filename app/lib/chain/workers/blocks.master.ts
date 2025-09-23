@@ -56,8 +56,11 @@ const jobPool = new JobPool<BlocksJobData, BlocksJobResult>(import.meta.resolve(
 */
 
 const StoredTxOutput = new Struct({
-	spent: bool,
+	spent: bool, // TODO: since u56 is big enough, maybe we can make spent a flag in u56?
 	value: u56,
+
+	// we will try things like these last and see if the it saves anything or does the opposite.
+	// because we need an index, that might cost more space than it saves.
 	scriptPubKey: bytes, // TODO: have internal id or something like that, they are usually repeated, maybe have a flag and point to the first one?
 });
 
