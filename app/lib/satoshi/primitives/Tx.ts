@@ -125,7 +125,7 @@ export class TxCodec extends Codec<Tx> {
 		const vin: TxIn[] = [];
 		for (let i = 0; i < vinCount; i++) {
 			// copy slices to avoid aliasing the original buffer
-			const txId = bytes.slice(offset, offset + 32);
+			const txId = bytes.subarray(offset, offset + 32);
 			offset += 32;
 
 			const vout = new BytesView(bytes, offset, 4).getUint32(0, true);
@@ -133,7 +133,7 @@ export class TxCodec extends Codec<Tx> {
 
 			const [scriptLen, scriptOff] = CompactSize.decode(bytes, offset);
 			offset = scriptOff;
-			const scriptSig = bytes.slice(offset, offset + scriptLen);
+			const scriptSig = bytes.subarray(offset, offset + scriptLen);
 			offset += scriptLen;
 
 			const sequence = new BytesView(bytes, offset, 4).getUint32(0, true);
@@ -159,7 +159,7 @@ export class TxCodec extends Codec<Tx> {
 
 			const [pkLen, pkOff] = CompactSize.decode(bytes, offset);
 			offset = pkOff;
-			const scriptPubKey = bytes.slice(offset, offset + pkLen);
+			const scriptPubKey = bytes.subarray(offset, offset + pkLen);
 			offset += pkLen;
 
 			vout.push({ value, scriptPubKey });
@@ -175,7 +175,7 @@ export class TxCodec extends Codec<Tx> {
 				for (let j = 0; j < nItems; j++) {
 					const [len, lenOff] = CompactSize.decode(bytes, offset);
 					offset = lenOff;
-					const item = bytes.slice(offset, offset + len);
+					const item = bytes.subarray(offset, offset + len);
 					offset += len;
 					witness.push(item);
 				}

@@ -2,12 +2,12 @@
 
 import { Struct } from "@nomadshiba/codec";
 import { equals } from "@std/bytes";
-import { BlockMessage } from "~/lib/satoshi/p2p/messages/Block.ts";
 import { humanize } from "~/lib/logging/human.ts";
 import { bytes32 } from "~/lib/primitives/Bytes32.ts";
-import { getTxId, getWTxId } from "~/lib/satoshi/primitives/Tx.ts";
 import { u24 } from "~/lib/primitives/U24.ts";
 import { computeSatoshiMerkleRoot } from "~/lib/satoshi/crypto/merkle.ts";
+import { BlockMessage } from "~/lib/satoshi/p2p/messages/Block.ts";
+import { getTxId, getWTxId } from "~/lib/satoshi/primitives/Tx.ts";
 
 export const TxEntry = new Struct({
 	txId: bytes32,
