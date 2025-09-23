@@ -2,12 +2,13 @@
 
 import { bool, bytes, i32, Struct, u16, u32, Vector } from "@nomadshiba/codec";
 import { join } from "@std/path";
-import { JobPool } from "../../JobPool.ts";
-import { BASE_DATA_DIR } from "../../constants.ts";
-import { bytes32 } from "../../primitives/Bytes32.ts";
-import { u56 } from "../../primitives/U56.ts";
-import { BlocksJobData, BlocksJobResult } from "./blocks.parallel.ts";
-import { u24 } from "../../primitives/U24.ts";
+import { JobPool } from "~/lib/JobPool.ts";
+import { BASE_DATA_DIR } from "~/lib/constants.ts";
+import { bytes32 } from "~/lib/primitives/Bytes32.ts";
+import { u56 } from "~/lib/primitives/U56.ts";
+import { BlocksJobData, BlocksJobResult } from "~/lib/chain/workers/blocks.parallel.ts";
+import { u24 } from "~/lib/primitives/U24.ts";
+import { StoredTxOutputValue } from "~/lib/chain/primitives/StoredTxOutputValueCodec.ts";
 
 const BASE_BLOCK_DIR = join(BASE_DATA_DIR, "blocks");
 
@@ -56,8 +57,7 @@ const jobPool = new JobPool<BlocksJobData, BlocksJobResult>(import.meta.resolve(
 */
 
 const StoredTxOutput = new Struct({
-	spent: bool, // TODO: since u56 is big enough, maybe we can make spent a flag in u56?
-	value: u56,
+	value: StoredTxOutputValue,
 
 	// we will try things like these last and see if the it saves anything or does the opposite.
 	// because we need an index, that might cost more space than it saves.

@@ -1,6 +1,6 @@
 import { Codec, Struct } from "@nomadshiba/codec";
-import { HeightStore } from "./HeightStore.ts";
-import { u24 } from "../primitives/U24.ts";
+import { HeightStore } from "~/lib/chain/HeightStore.ts";
+import { u24 } from "~/lib/primitives/U24.ts";
 
 type BlockLocation = Codec.Infer<typeof BlockLocation>;
 const BlockLocation = new Struct({

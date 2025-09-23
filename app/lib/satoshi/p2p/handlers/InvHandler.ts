@@ -1,6 +1,6 @@
 import { Bitcoin } from "~/Bitcoin.ts";
 import { InvMessage } from "~/lib/satoshi/p2p/messages/Inv.ts";
-import { humanize } from "../../../logging/human.ts";
+import { humanize } from "~/lib/logging/human.ts";
 
 export const InvHandler: Bitcoin.MessageHandler<InvMessage> = {
 	message: InvMessage,

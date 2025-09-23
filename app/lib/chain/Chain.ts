@@ -1,5 +1,5 @@
-import { BlockHeader } from "../primitives/BlockHeader.ts";
-import { ChainNode } from "./ChainNode.ts";
+import { BlockHeader } from "~/lib/satoshi/p2p/primitives/BlockHeader.ts";
+import { ChainNode } from "~/lib/chain/ChainNode.ts";
 
 const EMPTY_NODE: ChainNode = {
 	header: new Uint8Array(BlockHeader.stride),

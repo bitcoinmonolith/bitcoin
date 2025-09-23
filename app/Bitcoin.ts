@@ -1,6 +1,6 @@
 import { Peer } from "~/lib/satoshi/p2p/Peer.ts";
-import { Blockchain } from "./lib/chain/Blockchain.ts";
-import { Version } from "./lib/satoshi/p2p/messages/Version.ts";
+import { Blockchain } from "~/lib/chain/Blockchain.ts";
+import { Version } from "~/lib/satoshi/p2p/messages/Version.ts";
 
 export declare namespace Bitcoin {
 	type MessageHandler<T> = {

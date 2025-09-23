@@ -1,5 +1,5 @@
 import { Codec } from "@nomadshiba/codec";
-import { Block } from "~/lib/primitives/Block.ts";
+import { Block } from "~/lib/satoshi/p2p/primitives/Block.ts";
 import { PeerMessage } from "~/lib/satoshi/p2p/PeerMessage.ts";
 
 export type BlockMessage = {

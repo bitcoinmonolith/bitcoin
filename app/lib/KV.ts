@@ -3,7 +3,7 @@ import { Codec } from "@nomadshiba/codec";
 import { DenoSqliteDialect } from "@soapbox/kysely-deno-sqlite";
 import { dirname, join } from "@std/path";
 import { CompiledQuery, Kysely, Transaction } from "kysely";
-import { PartialTuple } from "./types.ts";
+import { PartialTuple } from "~/lib/types.ts";
 
 type KvSchema = { v: Uint8Array } & { [K in `k${number}`]: Uint8Array };
 type DB = { kv: KvSchema };

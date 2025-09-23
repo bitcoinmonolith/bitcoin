@@ -5,9 +5,9 @@ import { bool, bytes, Codec, i32, Struct, Tuple, u16, u32, u64, Vector } from "@
 import { equals } from "@std/bytes";
 import { join } from "@std/path";
 import { BASE_DATA_DIR } from "~/lib/constants.ts";
-import { Block } from "~/lib/primitives/Block.ts";
+import { Block } from "~/lib/satoshi/p2p/primitives/Block.ts";
 import { bytes32 } from "~/lib/primitives/Bytes32.ts";
-import { getTxId } from "~/lib/primitives/Tx.ts";
+import { getTxId } from "~/lib/satoshi/p2p/primitives/Tx.ts";
 import { u24 } from "~/lib/primitives/U24.ts";
 import { SequenceLock } from "~/lib/primitives/weirdness/SequenceLock.ts";
 import { TimeLock } from "~/lib/primitives/weirdness/TimeLock.ts";

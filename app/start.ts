@@ -9,7 +9,7 @@ import { SendCmpctHandler } from "~/lib/satoshi/p2p/handlers/SendCmpctHandler.ts
 import { handshake, VersionHandler } from "~/lib/satoshi/p2p/handlers/VersionHandler.ts";
 import { Version } from "~/lib/satoshi/p2p/messages/Version.ts";
 import { Peer } from "~/lib/satoshi/p2p/Peer.ts";
-import { Blockchain } from "./lib/chain/Blockchain.ts";
+import { Blockchain } from "~/lib/chain/Blockchain.ts";
 
 const NETWORK_MAGIC = hexToBytes("f9beb4d9"); // Mainnet
 /* const NETWORK_MAGIC = hexToBytes("0b110907"); // Testnet
