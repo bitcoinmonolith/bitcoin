@@ -2,7 +2,7 @@
 
 Experimental Bitcoin node and client. Still a work in progress, not ready for real use.
 
-For learning, hacking, or just messing around (for now).
+For learning, hacking, or just messing around (for now). Still way too early to, so don't be judgmental. Just messing around. 
 
 Fully made in Deno and TypeScript.
 
