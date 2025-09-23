@@ -15,9 +15,14 @@ const jobPool = new JobPool<BlocksJobData, BlocksJobResult>(import.meta.resolve(
 
 /*
 	Blocks are chunked, chunks are not based on height, but on size.
-	It will proably will be 1GB per chunk, chunks need to be big enough, so chunkId can be u16.
-	And chunks can should be small enough so maybe we can compress them in the future. (a compression that optimizes for speed)
-	We have a fixed sized BlockHeightIndex, that we can directly check what chunkId and offset a block or tx is at.
+	It will proably will be 1GB per chunk,
+	chunks need to be big enough, so chunkId can be u16.
+	And chunks can should be small enough,
+	so maybe we can compress them in the future. (a compression that optimizes for speed)
+	Also thats why I think about seperating witness data to another file,
+	so compression can get better patterns.
+	We have a fixed sized BlockHeightIndex,
+	that we can directly check what chunkId and offset a block or tx is at.
 
 	Chunk structure looks like this:
 	[Tx Count: u24]
@@ -53,7 +58,7 @@ const jobPool = new JobPool<BlocksJobData, BlocksJobResult>(import.meta.resolve(
 const StoredTxOutput = new Struct({
 	spent: bool,
 	value: u56,
-	scriptPubKey: bytes,
+	scriptPubKey: bytes, // TODO: have internal id or something like that, they are usually repeated, maybe have a flag and point to the first one?
 });
 
 const StoredTxInput = new Struct({
@@ -66,13 +71,18 @@ const StoredTxInput = new Struct({
 			// but 16+32=24+24, so it takes the same space.
 			// and this way i can directly go to the tx,
 			// instead of checking where the block is first
+			//
+			// this is only cheaper because there is always more inputs than txs.
+			// based on my calculations, it should only save around 6GB for the whole blockchain.
+			// but it also makes look ups easier and faster. so its a win win. even if one of the wins is small.
+			// we will squeeze out every bit we can. one by one like this.
 			chunkId: u16,
 			offset: u32,
 		}),
 		vout: u24, // should be enough for vout based on max block weight
 	}),
 	sequence: u32,
-	scriptSig: bytes, // TODO: have internal id or something like that, they are usually repeated, maybe have a flag and point to the first one?
+	scriptSig: bytes,
 	witness: bytes, // TODO: maybe seperate witness to another file? idk
 });
 
@@ -80,11 +90,6 @@ const StoredTx = new Struct({
 	// This is the only place where we store the full txId,
 	// if we dont store it anywhere else, in order to find the txId,
 	// we have to hash every tx until the coinbase txs of the utxo we are spending.
-	// this is only cheaper because txs usually have 2 or more outputs, including the change output,
-	// so you at least repeat same txid twice in the inputs.
-	// BUT if you dont spend it, and store the txid on the input you dont need the txid at all.
-	// so this is only cheaper because there are more inputs spending from the same tx.
-	// also, this method combined with offset pointing in the input, faster anyway.
 	txId: bytes32,
 	version: i32,
 	lockTime: u32,
@@ -92,6 +97,8 @@ const StoredTx = new Struct({
 	vin: new Vector(StoredTxInput),
 });
 
+// Per block optimizations like coinbase tx, doesn't save that much space,
+// But its easy to implement so why not. Why store 0s randomly in the middle of the chunk?
 const StoredCoinbaseTx = new Struct({
 	txId: bytes32,
 	version: i32,
