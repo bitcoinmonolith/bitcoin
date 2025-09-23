@@ -30,6 +30,13 @@ import { Codec } from "@nomadshiba/codec";
  *   { value, spent, scriptType: "script", scriptPubKey }
  */
 
+/*
+	Using pointer also requires indexing the addresses somewhere else.
+	But assuming we will support electrum endpoints, we will have to index the addresses somewhere anyway.
+	It should calculate the balance lazily, so it only calculates the balance when requested.
+	But it can keep like block height range or something to make it faster.
+*/
+
 const SCRIPT_TYPE = {
 	pointer: 0,
 	raw: 1,
