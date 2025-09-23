@@ -2,20 +2,20 @@ import { Codec } from "@nomadshiba/codec";
 
 export type StoredTxOutput = {
 	value: bigint; // 51-bit satoshi amount
-	spent: boolean;
+	spent: boolean; // 1 bit
 	scriptPubKey:
 		| {
-			isPointer: false;
-			script: Uint8Array;
+			isPointer: false; // 1 bit
+			script: Uint8Array; // rest after 7-byte prefix
 		}
 		| {
-			isPointer: true;
+			isPointer: true; // 1 bit
 			chunkId: number; // u16
 			offset: number; // u32
 		};
-	unused0: boolean;
-	unused1: boolean;
-	unused2: boolean;
+	unused0: boolean; // 1 bit
+	unused1: boolean; // 1 bit
+	unused2: boolean; // 1 bit
 };
 
 export class StoredTxOutputCodec extends Codec<StoredTxOutput> {
