@@ -9,8 +9,7 @@
 	"customizations": {
 		"vscode": {
 			"extensions": [
-				"justjavac.vscode-deno-extensionpack",
-				"Prisma.prisma"
+				"justjavac.vscode-deno-extensionpack"
 			]
 		}
 	}
