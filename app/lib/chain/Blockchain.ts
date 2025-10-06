@@ -86,7 +86,7 @@ export class Blockchain {
 	}
 
 	private async downloadChain(ctx: Bitcoin, peer: Peer): Promise<void> {
-// TODO: dont actually fetch to the peer tip, limit fetch to localHeight + n_max peer call. so if the peer sends infinite headers you don't get stuck, and actually do PoW check if chunks. 
+// TODO: dont actually fetch to the peer tip, limit fetch to localHeight + n_max per call. so if the peer sends infinite headers you don't get stuck, and actually do PoW check with chunks. 
 		const peerChain = new Chain(Array.from(this.localChain));
 		let chainSplit: { commonHeight: number } | null = null;
 
