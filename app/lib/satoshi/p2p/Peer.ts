@@ -268,7 +268,7 @@ export class Peer {
 			const tid = setTimeout(() => {
 				unlisten();
 				reject(new Error(`Timeout waiting for ${message.command}`));
-			}, 30_000);
+			}, 5_000);
 		});
 	}
 
@@ -288,7 +288,7 @@ export class Peer {
 			const tid = setTimeout(() => {
 				unlisten();
 				reject(new Error(`Timeout waiting for ${message.command}`));
-			}, 30_000);
+			}, 5_000);
 		});
 	}
 

@@ -53,7 +53,7 @@ export class Blockchain {
 		this.prevHashToHeight = new Map();
 	}
 
-	public async letsTryThis(ctx: Bitcoin, peer: Peer): Promise<void> {
+	public async startPrototype(ctx: Bitcoin, peers: Peer[]): Promise<void> {
 		this.chainStore.load(this.localChain);
 		if (this.localChain.length() === 0) {
 			const genesisWork = workFromHeader(GENESIS_BLOCK_HASH);
@@ -66,9 +66,15 @@ export class Blockchain {
 			console.log(`Initialized new chain with genesis block, work=${genesisWork}`);
 		}
 		this.reindexChain();
-		await this.downloadChain(ctx, peer);
-		await this.downloadChain(ctx, peer); // second time to test chain reorg handling
-		this.processBlockPool();
+
+		for (const peer of peers) {
+			try {
+				await this.downloadChain(ctx, peer);
+			} catch (e) {
+				console.error(`Failed to sync chain from ${peer.remoteHost}:`, e);
+			}
+		}
+		// this.processBlockPool();
 		// await this.downloadBlocks(peer);
 	}
 
@@ -86,7 +92,18 @@ export class Blockchain {
 	}
 
 	private async downloadChain(ctx: Bitcoin, peer: Peer): Promise<void> {
-// TODO: dont actually fetch to the peer tip, limit fetch to localHeight + n_max per call. so if the peer sends infinite headers you don't get stuck, and actually do PoW check with chunks. 
+		// TODO: dont actually fetch to the peer tip, limit fetch to localHeight + n_max per call.
+		// TODO: so if the peer sends infinite headers you don't get stuck, and actually do PoW check with chunks.
+		// TODO: also this is important for getting the headers from multiple peers, instead of relying on one peer for the initial chain download.
+		// TODO: later we will have a complex update tick that does stuff like this in a better way. combining all these actions.
+		// TODO: so the Bitcoin class will just be a coordinator of stuff, and the Blockchain class will just be a data structure manager with some logic.
+		// TODO: example first thing we do after connecting to peers is to download headers from all of them. this can be done one at a time. if we see a fork we handle it.
+		// TODO: this is done in chunks, so we shouldnt sync to the tip of the peer. we should cycle our currently connected peers (iter can be used for peers).
+		// TODO: etc... write more about this later. or do it instead of writing about it. but i mean this is all later, our current goal is storage optimization and block validation.
+		// TODO: we cycle the peers but we still ask for headers until we reach the tip for all of them. but of course we are not getting all of the headers from a peer.
+		// TODO: this is done once per peer, we need to reach the tip of each peer after getting connected to them. but we are not going from genesis for each peer of course.
+		// TODO: i mean this code already handles that and forks. so i should probably just stop yapping the same thing in different ways.
+
 		const peerChain = new Chain(Array.from(this.localChain));
 		let chainSplit: { commonHeight: number } | null = null;
 
@@ -193,7 +210,7 @@ export class Blockchain {
 		console.log();
 	}
 
-	private blockHeight = 900_000;
+	private blockHeight = 0;
 	private async downloadBlocks(peer: Peer): Promise<void> {
 		// download blocks until blockHeight is up to date with localChain height
 		// fetch in bulk, and put them in blockPool but if blockPool is full, wait until it has space

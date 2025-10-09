@@ -2,8 +2,8 @@ import { Codec } from "@nomadshiba/codec";
 import { concat } from "@std/bytes";
 import { CompactSize } from "~/lib/CompactSize.ts";
 import { BytesView } from "~/lib/BytesView.ts";
-import { SequenceLock } from "~/lib/primitives/weirdness/SequenceLock.ts";
-import { TimeLock } from "~/lib/primitives/weirdness/TimeLock.ts";
+import { SequenceLock } from "~/lib/satoshi/primitives/weirdness/SequenceLock.ts";
+import { TimeLock } from "~/lib/satoshi/primitives/weirdness/TimeLock.ts";
 import { sha256 } from "@noble/hashes/sha2";
 
 export type Tx = Readonly<{
