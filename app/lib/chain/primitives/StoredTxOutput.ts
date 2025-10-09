@@ -1,6 +1,7 @@
 // TODO: AI made this, verify it is correct, im gonna sleep now
 
 import { Codec } from "@nomadshiba/codec";
+import { BlockPointer } from "./BlockPointer.ts";
 
 /**
  * StoredTxOutput binary layout
@@ -48,7 +49,7 @@ const SCRIPT_TYPE = {
 } as const;
 
 export type StoredTxOutput =
-	| { value: bigint; spent: boolean; scriptType: "pointer"; chunkId: number; offset: number }
+	| { value: bigint; spent: boolean; scriptType: "pointer"; pointer: BlockPointer }
 	| { value: bigint; spent: boolean; scriptType: "script"; scriptPubKey: Uint8Array };
 
 function detectCompact(script: Uint8Array):
@@ -112,12 +113,12 @@ export class StoredTxOutputCodec extends Codec<StoredTxOutput> {
 		if (obj.scriptType === "pointer") {
 			typeId = SCRIPT_TYPE.pointer;
 			payload = new Uint8Array(6);
-			payload[0] = obj.chunkId & 0xff;
-			payload[1] = (obj.chunkId >> 8) & 0xff;
-			payload[2] = obj.offset & 0xff;
-			payload[3] = (obj.offset >> 8) & 0xff;
-			payload[4] = (obj.offset >> 16) & 0xff;
-			payload[5] = (obj.offset >> 24) & 0xff;
+			payload[0] = obj.pointer.chunkId & 0xff;
+			payload[1] = (obj.pointer.chunkId >> 8) & 0xff;
+			payload[2] = obj.pointer.offset & 0xff;
+			payload[3] = (obj.pointer.offset >> 8) & 0xff;
+			payload[4] = (obj.pointer.offset >> 16) & 0xff;
+			payload[5] = (obj.pointer.offset >> 24) & 0xff;
 		} else {
 			const detected = detectCompact(obj.scriptPubKey);
 			if (detected) {
@@ -167,11 +168,13 @@ export class StoredTxOutputCodec extends Codec<StoredTxOutput> {
 				value,
 				spent,
 				scriptType: "pointer",
-				chunkId: payload[0]! | (payload[1]! << 8),
-				offset: payload[2]! |
-					(payload[3]! << 8) |
-					(payload[4]! << 16) |
-					(payload[5]! << 24),
+				pointer: {
+					chunkId: payload[0]! | (payload[1]! << 8),
+					offset: payload[2]! |
+						(payload[3]! << 8) |
+						(payload[4]! << 16) |
+						(payload[5]! << 24),
+				},
 			};
 		}
 		if (typeId === SCRIPT_TYPE.raw) {
