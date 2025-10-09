@@ -1,5 +1,3 @@
-// TODO: AI made this, verify it is correct, im gonna sleep now
-
 import { Codec } from "@nomadshiba/codec";
 import { BlockPointer } from "./BlockPointer.ts";
 
@@ -12,7 +10,7 @@ import { BlockPointer } from "./BlockPointer.ts";
  * bits 52–55 : typeId  (4-bit script type, range 0..15)
  *
  * typeId mapping:
- *   0 = pointer (chunkId:u16, offset:u32)
+ *   0 = pointer (BlockPointer:u48)
  *   1 = raw     (scriptPubKey, arbitrary length)
  *   2 = p2pkh   (20-byte hash160)
  *   3 = p2sh    (20-byte hash160)
@@ -22,21 +20,14 @@ import { BlockPointer } from "./BlockPointer.ts";
  *   7–15 = reserved
  *
  * ── payload (variable) ──
- * if typeId = 0: 6 bytes [chunkId:u16, offset:u32]
+ * if typeId = 0: 6 bytes [BlockPointer:u48]
  * if typeId = 1: raw scriptPubKey (arbitrary length)
  * if typeId = 2–6: fixed-length data as listed above
  *
  * userland type is always either:
- *   { value, spent, scriptType: "pointer", chunkId, offset }
+ *   { value, spent, scriptType: "pointer", pointer }
  *   { value, spent, scriptType: "script", scriptPubKey }
  */
-
-/*
-	Using pointer also requires indexing the addresses somewhere else.
-	But assuming we will support electrum endpoints, we will have to index the addresses somewhere anyway.
-	It should calculate the balance lazily, so it only calculates the balance when requested.
-	But it can keep like block height range or something to make it faster.
-*/
 
 const SCRIPT_TYPE = {
 	pointer: 0,
@@ -49,13 +40,13 @@ const SCRIPT_TYPE = {
 } as const;
 
 export type StoredTxOutput =
-	| { value: bigint; spent: boolean; scriptType: "pointer"; pointer: BlockPointer }
+	| { value: bigint; spent: boolean; scriptType: "pointer"; pointer: number }
 	| { value: bigint; spent: boolean; scriptType: "script"; scriptPubKey: Uint8Array };
 
 function detectCompact(script: Uint8Array):
 	| { typeId: number; payload: Uint8Array }
 	| null {
-	// p2pkh: OP_DUP OP_HASH160 <20> <hash160> OP_EQUALVERIFY OP_CHECKSIG
+	// p2pkh
 	if (
 		script.length === 25 &&
 		script[0] === 0x76 && script[1] === 0xa9 &&
@@ -63,19 +54,19 @@ function detectCompact(script: Uint8Array):
 	) {
 		return { typeId: SCRIPT_TYPE.p2pkh, payload: script.subarray(3, 23) };
 	}
-	// p2sh: OP_HASH160 <20> <hash160> OP_EQUAL
+	// p2sh
 	if (script.length === 23 && script[0] === 0xa9 && script[1] === 0x14 && script[22] === 0x87) {
 		return { typeId: SCRIPT_TYPE.p2sh, payload: script.subarray(2, 22) };
 	}
-	// p2wpkh: 0x00 0x14 <20>
+	// p2wpkh
 	if (script.length === 22 && script[0] === 0x00 && script[1] === 0x14) {
 		return { typeId: SCRIPT_TYPE.p2wpkh, payload: script.subarray(2) };
 	}
-	// p2wsh: 0x00 0x20 <32>
+	// p2wsh
 	if (script.length === 34 && script[0] === 0x00 && script[1] === 0x20) {
 		return { typeId: SCRIPT_TYPE.p2wsh, payload: script.subarray(2) };
 	}
-	// p2tr: OP_1 0x20 <32>
+	// p2tr
 	if (script.length === 34 && script[0] === 0x51 && script[1] === 0x20) {
 		return { typeId: SCRIPT_TYPE.p2tr, payload: script.subarray(2) };
 	}
@@ -112,13 +103,7 @@ export class StoredTxOutputCodec extends Codec<StoredTxOutput> {
 
 		if (obj.scriptType === "pointer") {
 			typeId = SCRIPT_TYPE.pointer;
-			payload = new Uint8Array(6);
-			payload[0] = obj.pointer.chunkId & 0xff;
-			payload[1] = (obj.pointer.chunkId >> 8) & 0xff;
-			payload[2] = obj.pointer.offset & 0xff;
-			payload[3] = (obj.pointer.offset >> 8) & 0xff;
-			payload[4] = (obj.pointer.offset >> 16) & 0xff;
-			payload[5] = (obj.pointer.offset >> 24) & 0xff;
+			payload = BlockPointer.encode(obj.pointer);
 		} else {
 			const detected = detectCompact(obj.scriptPubKey);
 			if (detected) {
@@ -131,8 +116,7 @@ export class StoredTxOutputCodec extends Codec<StoredTxOutput> {
 		}
 
 		let bits = BigInt(typeId);
-		if (obj.spent) bits |= 1n << 4n; // spent flag is bit 4
-
+		if (obj.spent) bits |= 1n << 4n; // spent flag bit
 		const combined = (bits << 51n) | obj.value;
 
 		const header = new Uint8Array(7);
@@ -156,31 +140,22 @@ export class StoredTxOutputCodec extends Codec<StoredTxOutput> {
 
 		const value = combined & ((1n << 51n) - 1n);
 		const bits = combined >> 51n;
-
 		const spent = (bits & (1n << 4n)) !== 0n;
 		const typeId = Number(bits & 0xfn);
-
 		const payload = data.subarray(7);
 
 		if (typeId === SCRIPT_TYPE.pointer) {
-			if (payload.length !== 6) throw new Error("Invalid pointer payload length");
+			if (payload.length !== BlockPointer.stride) throw new Error("Invalid pointer payload length");
 			return {
 				value,
 				spent,
 				scriptType: "pointer",
-				pointer: {
-					chunkId: payload[0]! | (payload[1]! << 8),
-					offset: payload[2]! |
-						(payload[3]! << 8) |
-						(payload[4]! << 16) |
-						(payload[5]! << 24),
-				},
+				pointer: BlockPointer.decode(payload),
 			};
 		}
 		if (typeId === SCRIPT_TYPE.raw) {
 			return { value, spent, scriptType: "script", scriptPubKey: payload };
 		}
-		// compact form → reconstruct to script
 		const script = reconstructScript(typeId, payload);
 		return { value, spent, scriptType: "script", scriptPubKey: script };
 	}

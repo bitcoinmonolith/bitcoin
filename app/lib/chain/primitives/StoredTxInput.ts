@@ -1,4 +1,4 @@
-import { bytes, Struct, u16, u32 } from "@nomadshiba/codec";
+import { bytes, Struct, u32 } from "@nomadshiba/codec";
 import { u24 } from "~/lib/primitives/U24.ts";
 import { BlockPointer } from "./BlockPointer.ts";
 
