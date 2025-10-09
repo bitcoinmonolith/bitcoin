@@ -1,5 +1,5 @@
 import { Codec } from "@nomadshiba/codec";
-import { BlockPointer } from "./BlockPointer.ts";
+import { StoredChainPointer } from "./StoredChainPointer.ts";
 
 /**
  * StoredTxOutput binary layout
@@ -103,7 +103,7 @@ export class StoredTxOutputCodec extends Codec<StoredTxOutput> {
 
 		if (obj.scriptType === "pointer") {
 			typeId = SCRIPT_TYPE.pointer;
-			payload = BlockPointer.encode(obj.pointer);
+			payload = StoredChainPointer.encode(obj.pointer);
 		} else {
 			const detected = detectCompact(obj.scriptPubKey);
 			if (detected) {
@@ -145,12 +145,12 @@ export class StoredTxOutputCodec extends Codec<StoredTxOutput> {
 		const payload = data.subarray(7);
 
 		if (typeId === SCRIPT_TYPE.pointer) {
-			if (payload.length !== BlockPointer.stride) throw new Error("Invalid pointer payload length");
+			if (payload.length !== StoredChainPointer.stride) throw new Error("Invalid pointer payload length");
 			return {
 				value,
 				spent,
 				scriptType: "pointer",
-				pointer: BlockPointer.decode(payload),
+				pointer: StoredChainPointer.decode(payload),
 			};
 		}
 		if (typeId === SCRIPT_TYPE.raw) {

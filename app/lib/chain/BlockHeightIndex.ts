@@ -1,8 +1,8 @@
 import { HeightStore } from "~/lib/chain/HeightStore.ts";
-import { BlockPointer } from "./primitives/BlockPointer.ts";
+import { StoredChainPointer } from "./primitives/StoredChainPointer.ts";
 
-export class BlockHeightIndex extends HeightStore<BlockPointer> {
+export class BlockHeightIndex extends HeightStore<StoredChainPointer> {
 	constructor(path: string) {
-		super(BlockPointer, path);
+		super(StoredChainPointer, path);
 	}
 }

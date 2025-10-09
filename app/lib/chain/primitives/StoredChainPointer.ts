@@ -36,5 +36,5 @@ import { u48 } from "../../primitives/U48.ts";
 // so this way we can have a single u48 number instead of two u24 numbers.
 // this actually makes more sense.
 
-export type BlockPointer = Codec.Infer<typeof BlockPointer>;
-export const BlockPointer = u48;
+export type StoredChainPointer = Codec.Infer<typeof StoredChainPointer>;
+export const StoredChainPointer = u48;
