@@ -16,7 +16,8 @@ Later goals after making sure everything implemented correctly:
 - Have a mempoolspace like explorer built-in.
 - Have isolated wasm plugin support for mempool filters and many other things. For example DATUM.
 - Have plugin store on nostr.
-- And way down the line, when everything is done, have a new communication protocol over http and websockets. It can also have PoW requirement support for read requests. 
+- And way down the line, when everything is done, have a new communication protocol over http and websockets. It can also have PoW requirement support for read requests.
+- Built-in plugins: DATUM, filtering plugins, delay propagation of blocks that doesnt fit into your filters based on weight of bad txs, delay like 5mins or 10mins idk.
 
 
 ## Notes
