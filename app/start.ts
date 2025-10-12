@@ -11,21 +11,26 @@ import { handshake, VersionHandler } from "~/lib/satoshi/p2p/handlers/VersionHan
 import { Version } from "~/lib/satoshi/p2p/messages/Version.ts";
 import { Peer } from "~/lib/satoshi/p2p/Peer.ts";
 
-const NODE_NETWORK = 1n;
-const NODE_WITNESS = 1n << 3n; // 0x08
+const SERVICES = {
+	NETWORK: 0x01n,
+	BLOOM: 0x04n,
+	WITNESS: 0x08n,
+	COMPACT_BLOCKS: 0x20n,
+	NETWORK_LIMITED: 0x10n,
+} as const;
 
 const BITCOIN_NETWORK_MAGIC = hexToBytes("f9beb4d9"); // Mainnet
 // const TESTNET_NETWORK_MAGIC = hexToBytes("0b110907"); // Testnet
 
 const version: Version = {
 	version: 70015,
-	services: NODE_NETWORK | NODE_WITNESS,
+	services: SERVICES.WITNESS,
 	timestamp: BigInt(Math.floor(Date.now() / 1000)),
-	recvServices: NODE_NETWORK | NODE_WITNESS,
-	transServices: NODE_NETWORK | NODE_WITNESS,
+	recvServices: SERVICES.WITNESS,
+	transServices: SERVICES.WITNESS,
 	nonce: 987654321n,
 	userAgent: "/BitcoinMonolith:0.0.1-preview.1/",
-	startHeight: 150000,
+	startHeight: 0,
 	relay: false,
 };
 
