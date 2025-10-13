@@ -10,6 +10,8 @@ Main goal is to optimize for storage (reducing indexed full node size more than 
 
 Prioritizing UX and simplicity, end user expected to be normal everyday bitcoin user.
 
+We are not trying to change bitcoin, we are simply allowing you to use bitcoin the best way you can, easily, while requiring less storage.
+
 ## Notes
 
 - The whole codebase uses wire format internally, so there is no `.reverse()` or `.toReversed()` in the whole codebase
