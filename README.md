@@ -32,7 +32,7 @@ We are not trying to change bitcoin, we are simply allowing you to use bitcoin t
   - Have isolated wasm plugin support for mempool filters and many other things. For example DATUM.
   - Have plugin store on nostr.
   - Built-in plugins: DATUM, filtering plugins, delay propagation of blocks that doesnt fit into your filters based on
-    weight of bad txs, delay like 5mins or 10mins idk.
+    weight of bad txs, delay like 5mins or 10mins idk. 1 hour?
 - And way down the line, when everything is done, have a new communication protocol over http and websockets. It can
   also have PoW requirement support for read requests.
 - Unlike Satoshi clients, this will be able to work out of the box without being have to download the whole chain.
