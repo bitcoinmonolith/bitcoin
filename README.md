@@ -47,3 +47,4 @@ We are not trying to change bitcoin, we are simply allowing you to use bitcoin t
 - You should be able to do anything bitcoin related with this client, without needing to setup complex third party
   software, and making sure everything connects to each other properly. It will do everything with plugins and built-in
   features.
+- So your grandma can run a useful node.
