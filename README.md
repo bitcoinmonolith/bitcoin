@@ -4,7 +4,7 @@ Experimental Bitcoin node and client. Still a work in progress, not ready for re
 
 For learning, hacking, or just messing around (for now). Still way too early.
 
-Fully made in all verifiable Deno and TypeScript.
+Fully made in all verifiable Deno and TypeScript. (so its friendly for even more devs)
 
 Main goal is to optimize for storage (reducing indexed full node size more than half).
 
