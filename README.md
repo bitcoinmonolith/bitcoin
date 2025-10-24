@@ -17,9 +17,10 @@ We are not trying to change bitcoin, we are simply allowing you to use bitcoin t
 - The whole codebase uses wire format internally, so there is no `.reverse()` or `.toReversed()` in the whole codebase
   except for making things like console logs human readable.
 - We call original implementation of bitcoin and anything legacy as "satoshi". For example, Satoshi Client, Satoshi RPC,
-  Satoshi TPC or Satoshi P2P, satoshiMerkleRoot, satoshi address type.
+  Satoshi TPC or Satoshi P2P, `computeSatoshiMerkleRoot`, satoshi address type.
 - Another thing is, internally we use 4MB as max block weight. Witness is weighted 1x, and non-witness data is weighted
   4x.
+- `computeSatoshiMerkleRoot` gives empty bytes (void), instead of giving a `mutated` boolean.
 
 ## Long Term Goals:
 
