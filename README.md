@@ -22,6 +22,12 @@ We are not trying to change bitcoin, we are simply allowing you to use bitcoin t
   4x.
 - `computeSatoshiMerkleRoot` gives empty bytes (void), instead of giving a `mutated` boolean.
 
+## Short Term Goal: 
+- Install Termux on your phone.
+- `pkg install deno`
+- `deno run -A bitcoinmonolith.ts`
+- Full node with full history running and fitting in your phone.
+
 ## Long Term Goals:
 
 - Be a full node with storage optimization.
