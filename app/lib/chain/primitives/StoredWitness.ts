@@ -1,15 +1,15 @@
 import { Bytes, bytes, Codec, Enum, Struct } from "@nomadshiba/codec";
 import { CompactSize } from "~/lib/CompactSize.ts";
 
-export class StoredWitnessCodec extends Codec<Uint8Array> {
+export class StoredWitnessCodec extends Codec<Uint8Array[]> {
 	public readonly stride = -1;
 
-	encode(bytes: Uint8Array): Uint8Array {
-		return StoredWitnessEnum.encode(detectPattern(bytes));
+	encode(data: Uint8Array[]): Uint8Array {
+		return StoredWitnessEnum.encode(detectPattern(data));
 	}
 
-	decode(data: Uint8Array): [Uint8Array, number] {
-		const [enumValue, bytesRead] = StoredWitnessEnum.decode(data);
+	decode(bytes: Uint8Array): [Uint8Array[], number] {
+		const [enumValue, bytesRead] = StoredWitnessEnum.decode(bytes);
 		return [reconstructWitness(enumValue), bytesRead];
 	}
 }
@@ -39,18 +39,7 @@ const StoredWitnessEnum = new Enum({
 	raw: bytes,
 });
 
-function detectPattern(bytes: Uint8Array): StoredWitnessEnum {
-	const items: Uint8Array[] = [];
-	let offset = 0;
-	const [count, countOff] = CompactSize.decode(bytes, offset);
-	offset = countOff;
-	for (let i = 0; i < count; i++) {
-		const [len, lenOff] = CompactSize.decode(bytes, offset);
-		offset = lenOff;
-		items.push(bytes.subarray(offset, offset + len));
-		offset += len;
-	}
-
+function detectPattern(items: Uint8Array[]): StoredWitnessEnum {
 	if (items.length === 0) {
 		return { kind: "empty", value: {} };
 	}
@@ -200,7 +189,7 @@ function detectPattern(bytes: Uint8Array): StoredWitnessEnum {
 	}
 }
 
-function reconstructWitness(stored: StoredWitnessEnum): Uint8Array {
+function reconstructWitness(stored: StoredWitnessEnum): Uint8Array[] {
 	const items: Uint8Array[] = [];
 
 	switch (stored.kind) {
@@ -315,18 +304,5 @@ function reconstructWitness(stored: StoredWitnessEnum): Uint8Array {
 		}
 	}
 
-	// Encode items to wire format
-	const chunks: Uint8Array[] = [CompactSize.encode(items.length)];
-	for (const item of items) {
-		chunks.push(CompactSize.encode(item.length));
-		chunks.push(item);
-	}
-	const totalLength = chunks.reduce((sum, c) => sum + c.length, 0);
-	const out = new Uint8Array(totalLength);
-	let offset = 0;
-	for (const chunk of chunks) {
-		out.set(chunk, offset);
-		offset += chunk.length;
-	}
-	return out;
+	return items;
 }

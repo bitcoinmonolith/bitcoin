@@ -49,7 +49,7 @@ const SCRIPT_SIZE: Record<number, number> = {
 
 export type StoredTxOutput =
 	| { value: bigint; spent: boolean; scriptType: "pointer"; pointer: number }
-	| { value: bigint; spent: boolean; scriptType: "script"; scriptPubKey: Uint8Array };
+	| { value: bigint; spent: boolean; scriptType: "raw"; scriptPubKey: Uint8Array };
 
 function detectCompact(script: Uint8Array):
 	| { typeId: number; payload: Uint8Array }
@@ -169,7 +169,7 @@ export class StoredTxOutputCodec extends Codec<StoredTxOutput> {
 			];
 		}
 		if (typeId === SCRIPT_TYPE.raw) {
-			return [{ value, spent, scriptType: "script", scriptPubKey: payload }, data.length];
+			return [{ value, spent, scriptType: "raw", scriptPubKey: payload }, data.length];
 		}
 
 		// Fixed-size payloads based on typeId
@@ -181,7 +181,7 @@ export class StoredTxOutputCodec extends Codec<StoredTxOutput> {
 
 		bytesRead += payloadSize;
 		const script = reconstructScript(typeId, payload.subarray(0, payloadSize));
-		return [{ value, spent, scriptType: "script", scriptPubKey: script }, bytesRead];
+		return [{ value, spent, scriptType: "raw", scriptPubKey: script }, bytesRead];
 	}
 }
 

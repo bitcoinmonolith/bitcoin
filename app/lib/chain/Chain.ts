@@ -9,7 +9,6 @@ const EMPTY_NODE: ChainNode = {
 
 export class Chain implements Iterable<ChainNode> {
 	private chain: ChainNode[];
-	private downloadCursor: number = 0;
 
 	constructor(use: ChainNode[]) {
 		this.chain = use;
@@ -53,31 +52,5 @@ export class Chain implements Iterable<ChainNode> {
 
 	public length(): number {
 		return this.chain.length;
-	}
-
-	/**
-	 * Get the current download cursor (the height of the next block to download).
-	 */
-	public getDownloadCursor(): number {
-		return this.downloadCursor;
-	}
-
-	/**
-	 * Set the download cursor to a specific height.
-	 */
-	public setDownloadCursor(height: number): void {
-		if (height < 0 || height > this.height()) {
-			throw new Error(`Invalid download cursor: ${height}. Must be between 0 and ${this.height()}`);
-		}
-		this.downloadCursor = height;
-	}
-
-	/**
-	 * Increment the download cursor by 1.
-	 */
-	public incrementDownloadCursor(): void {
-		if (this.downloadCursor < this.height()) {
-			this.downloadCursor++;
-		}
 	}
 }

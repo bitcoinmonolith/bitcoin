@@ -55,12 +55,7 @@ export class BlockDownloader {
 				});
 
 				// Request the block with witness data
-				await peer.send(GetDataMessage, {
-					inventory: [{
-						type: "WITNESS_BLOCK",
-						hash: hash,
-					}],
-				});
+				await peer.send(GetDataMessage, { inventory: [{ type: "WITNESS_BLOCK", hash: hash }] });
 
 				const blockData = await blockPromise;
 

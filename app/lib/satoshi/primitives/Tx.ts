@@ -1,10 +1,9 @@
 import { Codec } from "@nomadshiba/codec";
 import { concat } from "@std/bytes";
-import { CompactSize } from "~/lib/CompactSize.ts";
 import { BytesView } from "~/lib/BytesView.ts";
+import { CompactSize } from "~/lib/CompactSize.ts";
 import { SequenceLock } from "~/lib/satoshi/primitives/weirdness/SequenceLock.ts";
 import { TimeLock } from "~/lib/satoshi/primitives/weirdness/TimeLock.ts";
-import { sha256 } from "@noble/hashes/sha2";
 
 export type Tx = Readonly<{
 	version: number;
@@ -194,57 +193,8 @@ export class TxCodec extends Codec<Tx> {
 			witness: hasWitness,
 		};
 
-		if (tx.witness) {
-			wBytesCache.set(tx, bytes.subarray(0, offset));
-		} else {
-			bytesCache.set(tx, bytes.subarray(0, offset));
-		}
 		return [tx, offset];
 	}
 }
 
 export const Tx = new TxCodec();
-
-const bytesCache = new WeakMap<Tx, Uint8Array>();
-const txIdCache = new WeakMap<Tx, Uint8Array>();
-export function getTxId(tx: Tx): Uint8Array {
-	let txId = txIdCache.get(tx);
-	if (!txId) {
-		let bytes = bytesCache.get(tx);
-		if (!bytes) {
-			if (tx.witness) {
-				bytes = Tx.encode({ ...tx, witness: false });
-				bytesCache.set(tx, bytes);
-			} else {
-				bytes = Tx.encode(tx);
-				bytesCache.set(tx, bytes);
-				wBytesCache.set(tx, bytes);
-			}
-		}
-		txId = sha256(sha256(bytes));
-		txIdCache.set(tx, txId);
-	}
-	return txId;
-}
-
-const wBytesCache = new WeakMap<Tx, Uint8Array>();
-const wtxIdCache = new WeakMap<Tx, Uint8Array>();
-export function getWTxId(tx: Tx): Uint8Array {
-	let wtxId = wtxIdCache.get(tx);
-	if (!wtxId) {
-		let wbytes = wBytesCache.get(tx);
-		if (!wbytes) {
-			if (tx.witness) {
-				wbytes = Tx.encode(tx);
-				wBytesCache.set(tx, wbytes);
-			} else {
-				wbytes = Tx.encode(tx);
-				wBytesCache.set(tx, wbytes);
-				bytesCache.set(tx, wbytes);
-			}
-		}
-		wtxId = sha256(sha256(wbytes));
-		wtxIdCache.set(tx, wtxId);
-	}
-	return wtxId;
-}
