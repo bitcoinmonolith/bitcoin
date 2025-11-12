@@ -1,15 +1,17 @@
 import { hexToBytes } from "@noble/hashes/utils";
 import { join } from "@std/path";
-import { Bitcoin } from "~/Bitcoin.ts";
-import { Blockchain } from "~/lib/chain/Blockchain.ts";
 import { BASE_DATA_DIR } from "~/lib/constants.ts";
-import { GetHeadersHandler } from "~/lib/satoshi/p2p/handlers/GetHeadersHandler.ts";
-import { InvHandler } from "~/lib/satoshi/p2p/handlers/InvHandler.ts";
-import { ping, PingHandler } from "~/lib/satoshi/p2p/handlers/PingHandler.ts";
-import { SendCmpctHandler } from "~/lib/satoshi/p2p/handlers/SendCmpctHandler.ts";
-import { handshake, VersionHandler } from "~/lib/satoshi/p2p/handlers/VersionHandler.ts";
 import { Version } from "~/lib/satoshi/p2p/messages/Version.ts";
-import { Peer } from "~/lib/satoshi/p2p/Peer.ts";
+import { ChainManager } from "./lib/chain/ChainManager.ts";
+import { PeerManager } from "./lib/satoshi/p2p/PeerManager.ts";
+import { VersionHandler } from "./lib/satoshi/p2p/handlers/VersionHandler.ts";
+import { PingHandler } from "./lib/satoshi/p2p/handlers/PingHandler.ts";
+import { InvHandler } from "./lib/satoshi/p2p/handlers/InvHandler.ts";
+import { GetHeadersHandler } from "./lib/satoshi/p2p/handlers/GetHeadersHandler.ts";
+import { SendHeadersHandler } from "./lib/satoshi/p2p/handlers/SendHeadersHandler.ts";
+import { SendCmpctHandler } from "./lib/satoshi/p2p/handlers/SendCmpctHandler.ts";
+import { GetAddrHandler } from "./lib/satoshi/p2p/handlers/GetAddrHandler.ts";
+import { delay } from "@std/async";
 
 const SERVICES = {
 	NETWORK: 0x01n,
@@ -34,38 +36,28 @@ const version: Version = {
 	relay: false,
 };
 
-// const LOCAL_PEERS: Peer[] = [new Peer("192.168.1.10", 8333, BITCOIN_NETWORK_MAGIC)];
-const SEEDED_PEERS: Peer[] = await peersFromSeed("dnsseed.bitcoin.dashjr.org", 8333, BITCOIN_NETWORK_MAGIC);
-
-async function peersFromSeed(seedHost: string, port: number, magic: Uint8Array): Promise<Peer[]> {
-	const addrs = await Deno.resolveDns(seedHost, "A");
-	return addrs.map((addr) => new Peer(addr, port, magic));
-}
-
-const bitcoin = new Bitcoin({
+const chainManager = new ChainManager(join(BASE_DATA_DIR, "chain"));
+const peerManager = new PeerManager({
+	magic: BITCOIN_NETWORK_MAGIC,
 	version,
-	blockchain: new Blockchain(join(BASE_DATA_DIR, "chain")),
+	maxConnections: 8,
+	seeds: [/* { host: "dnsseed.bitcoin.dashjr.org", port: 8333 } */],
 	handlers: [
 		VersionHandler,
 		PingHandler,
-		SendCmpctHandler,
-		GetHeadersHandler,
 		InvHandler,
+		GetHeadersHandler,
+		SendHeadersHandler,
+		SendCmpctHandler,
+		GetAddrHandler,
 	],
 });
 
-const peers = await Promise.allSettled(SEEDED_PEERS.map(async (peer) => {
-	await peer.connect();
-	bitcoin.addPeer(peer);
-	peer.remoteHost; // domain or IP
-	await handshake(peer, {
-		...version,
-		recvIP: peer.remoteIp,
-		recvPort: peer.remotePort,
-		transIP: peer.localIp,
-		transPort: peer.localPort,
-	});
-	await ping(peer);
-	return peer;
-})).then((peers) => peers.filter((peer) => peer.status === "fulfilled").map((peer) => peer.value));
-await bitcoin.blockchain.startPrototype(bitcoin, peers);
+peerManager.addKnownPeer({ host: "192.168.1.10", port: 8333 });
+
+await chainManager.init();
+while (true) {
+	await peerManager.maintainConnections();
+	await chainManager.syncHeadersFromPeers(peerManager);
+	await delay(10_000);
+}

@@ -1,3 +1,5 @@
+import { delay } from "@std/async";
+
 const JOB_WORKER_COUNT = navigator.hardwareConcurrency || 4;
 
 export declare namespace JobPool {
@@ -23,7 +25,7 @@ export class JobPool<TData, TResult> {
 			worker = this.freeWorkers.pop();
 			workerIndex = this.workerCount - this.freeWorkers.length - 1;
 			if (!worker) {
-				await new Promise((r) => setTimeout(r, 10));
+				await delay(10);
 			}
 		}
 

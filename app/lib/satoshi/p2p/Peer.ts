@@ -1,3 +1,5 @@
+// TODO: This is mostly AI generated code. Maybe make it more reaadable later. Or don't ever look at it again. idk.
+
 import { sha256 } from "@noble/hashes/sha2";
 import { Codec } from "@nomadshiba/codec";
 
@@ -116,6 +118,11 @@ class ByteQueue {
 
 // ---- Peer types ----
 export declare namespace Peer {
+	export type Address = {
+		host: string;
+		port: number;
+	};
+
 	export type MessagePayload = {
 		command: string;
 		payload: Uint8Array; // ephemeral view
@@ -126,6 +133,15 @@ export declare namespace Peer {
 	};
 	export type Listener = (msg: Peer.MessagePayload) => void;
 	export type Unlistener = () => void;
+
+	export type DisconnectReason =
+		| { type: "manual" }
+		| { type: "read_error"; error: unknown }
+		| { type: "connection_closed" }
+		| { type: "write_timeout" }
+		| { type: "heartbeat_timeout" };
+
+	export type DisconnectCallback = (reason: DisconnectReason) => void;
 }
 
 // ---- Peer impl ----
@@ -164,12 +180,15 @@ export class Peer {
 
 	public readonly magic: Uint8Array;
 	private readonly listeners: Set<Peer.Listener> = new Set();
+	private readonly disconnectCallbacks: Set<Peer.DisconnectCallback> = new Set();
 	private connection: Deno.Conn | null = null;
+	private heartbeatTimer: number | null = null;
+	private lastActivity = 0;
 
-	constructor(host: string, port: number, magic: Uint8Array) {
+	constructor(address: Peer.Address, magic: Uint8Array) {
 		if (magic.length !== MAGIC_LEN) throw new Error("magic must be 4 bytes");
-		this.remoteHost = host;
-		this.remotePort = port;
+		this.remoteHost = address.host;
+		this.remotePort = address.port;
 		this.magic = magic;
 	}
 
@@ -190,21 +209,68 @@ export class Peer {
 		}
 
 		this.#connected = true;
+		this.lastActivity = Date.now();
 
 		// detached read loop (errors handled internally)
 		void this.readLoop(this.connection);
 	}
 
-	disconnect(): void {
-		if (!this.#connected || !this.connection) return;
-		this.#connected = false;
-		try {
-			this.connection.close();
-		} catch { /* noop */ }
-		this.connection = null;
+	startHeartbeat(intervalMs = 60_000, timeoutMs = 120_000): void {
+		if (this.heartbeatTimer !== null) return;
+
+		this.heartbeatTimer = setInterval(() => {
+			if (!this.#connected) {
+				if (this.heartbeatTimer !== null) {
+					clearInterval(this.heartbeatTimer);
+					this.heartbeatTimer = null;
+				}
+				return;
+			}
+
+			const now = Date.now();
+			const timeSinceActivity = now - this.lastActivity;
+
+			if (timeSinceActivity > timeoutMs) {
+				this.logWarn(`No activity for ${timeSinceActivity}ms, disconnecting`);
+				this.disconnect({ type: "heartbeat_timeout" });
+			}
+		}, intervalMs);
 	}
 
-	async send<T>(message: Peer.Message<T>, data: T): Promise<void> {
+	disconnect(reason: Peer.DisconnectReason = { type: "manual" }): void {
+		if (!this.#connected) return;
+		this.#connected = false;
+
+		// Stop heartbeat
+		if (this.heartbeatTimer !== null) {
+			clearInterval(this.heartbeatTimer);
+			this.heartbeatTimer = null;
+		}
+
+		// Close connection
+		if (this.connection) {
+			try {
+				this.connection.close();
+			} catch { /* noop */ }
+			this.connection = null;
+		}
+
+		// Notify callbacks
+		for (const cb of this.disconnectCallbacks) {
+			try {
+				cb(reason);
+			} catch { /* ignore callback errors */ }
+		}
+	}
+
+	onDisconnect(callback: Peer.DisconnectCallback): Peer.Unlistener {
+		this.disconnectCallbacks.add(callback);
+		return () => {
+			this.disconnectCallbacks.delete(callback);
+		};
+	}
+
+	async send<T>(message: Peer.Message<T>, data: T, timeoutMs = 10_000): Promise<void> {
 		const conn = this.connection;
 		if (!this.#connected || !conn) throw new Error("Peer is not connected");
 
@@ -243,7 +309,21 @@ export class Peer {
 		// payload
 		out.set(payload, HDR_LEN);
 
-		await conn.write(out);
+		// Write with timeout
+		const abort = new AbortController();
+		const timer = setTimeout(() => abort.abort(), timeoutMs);
+		try {
+			await conn.write(out);
+			this.lastActivity = Date.now();
+		} catch (e) {
+			if (abort.signal.aborted) {
+				this.disconnect({ type: "write_timeout" });
+				throw new Error(`Write timeout after ${timeoutMs}ms`);
+			}
+			throw e;
+		} finally {
+			clearTimeout(timer);
+		}
 	}
 
 	listen(listener: Peer.Listener): Peer.Unlistener {
@@ -301,8 +381,15 @@ export class Peer {
 		try {
 			while (this.#connected) {
 				const n = await conn.read(readBuf);
-				if (n === null) break;
-				if (n > 0) q.append(readBuf, n);
+				if (n === null) {
+					// Connection closed by peer
+					this.disconnect({ type: "connection_closed" });
+					break;
+				}
+				if (n > 0) {
+					q.append(readBuf, n);
+					this.lastActivity = Date.now();
+				}
 
 				// parse as much as possible
 				parse: while (q.length >= HDR_LEN) {
@@ -358,13 +445,16 @@ export class Peer {
 					q.consume(frameLen);
 				}
 			}
-		} catch {
-			// drop through to finally
+		} catch (e) {
+			// Read error - disconnect with reason
+			this.disconnect({ type: "read_error", error: e });
 		} finally {
-			this.disconnect();
+			// Ensure disconnected (idempotent)
+			if (this.#connected) {
+				this.disconnect({ type: "connection_closed" });
+			}
 		}
 	}
-
 	log(...args: unknown[]): void {
 		console.log(
 			`\x1b[90m[\x1b[0m\x1b[36mPeer\x1b[0m\x1b[90m \x1b[0m\x1b[33m${this.remoteHost}\x1b[0m\x1b[90m:\x1b[0m\x1b[32m${this.remotePort}\x1b[0m\x1b[90m]\x1b[0m`,

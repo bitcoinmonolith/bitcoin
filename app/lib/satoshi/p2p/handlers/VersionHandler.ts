@@ -1,9 +1,9 @@
-import { Bitcoin } from "~/Bitcoin.ts";
 import { VerackMessage } from "~/lib/satoshi/p2p/messages/Verack.ts";
 import { VersionMessage } from "~/lib/satoshi/p2p/messages/Version.ts";
 import { Peer } from "~/lib/satoshi/p2p/Peer.ts";
+import { PeerMessageHandler } from "../PeerMessageHandler.ts";
 
-export const VersionHandler: Bitcoin.MessageHandler<VersionMessage> = {
+export const VersionHandler: PeerMessageHandler<VersionMessage> = {
 	message: VersionMessage,
 	async handle({ peer, data }) {
 		peer.log(`🤝 Received version: v${data.version}, ua=${data.userAgent}`);

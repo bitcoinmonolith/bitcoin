@@ -1,10 +1,10 @@
 import { bytes, Struct, u32 } from "@nomadshiba/codec";
 import { u24 } from "~/lib/primitives/U24.ts";
-import { StoredChainPointer } from "./StoredChainPointer.ts";
+import { StoredPointer } from "./StoredPointer.ts";
 
 export const StoredTxInput = new Struct({
 	prevOut: new Struct({
-		tx: StoredChainPointer,
+		tx: StoredPointer,
 		vout: u24, // should be enough for vout based on max block weight
 	}),
 	sequence: u32,
