@@ -13,7 +13,6 @@ import { PeerManager } from "~/lib/satoshi/p2p/PeerManager.ts";
 import { BlockHeader } from "~/lib/satoshi/primitives/BlockHeader.ts";
 import { Chain } from "./Chain.ts";
 import { ChainStore } from "./ChainStore.ts";
-import { delay } from "@std/async";
 
 export class ChainManager {
 	public readonly baseDirectory: string;
@@ -64,40 +63,32 @@ export class ChainManager {
 		}
 	}
 
+	private peersAtTip: Set<Peer> = new Set();
 	async syncHeadersFromPeers(peerManager: PeerManager): Promise<void> {
-		const CHUNK_SIZE = 100_000; // Max headers to fetch per call to prevent infinite header attacks
+		const CHUNK_SIZE = 210_000; // Max headers to fetch per call to prevent infinite header attacks
 
-		while (true) {
-			let allPeersAtTip = true;
-			const peers = peerManager.peers();
+		const peers = peerManager.peers();
 
-			for (const peer of peers) {
-				// Skip if peer is no longer connected
-				if (!peer.connected) {
-					continue;
-				}
-
-				try {
-					const targetHeight = this.localChain.height() + CHUNK_SIZE;
-					const peerChain = await this.syncHeadersFromPeer(peer, targetHeight);
-					const reachedTip = peerChain.height() < targetHeight;
-					if (!reachedTip) {
-						allPeersAtTip = false;
-					}
-
-					if (
-						peerChain.height() === this.localChain.height() &&
-						equals(peerChain.tip().hash, this.localChain.tip().hash)
-					) {
-						peer.log("Fully synced with peer");
-					}
-				} catch (e) {
-					peer.logError(`Failed to sync headers:`, e);
-				}
+		for (const peer of peers) {
+			// Skip if peer is no longer connected
+			if (!peer.connected) {
+				continue;
 			}
 
-			if (allPeersAtTip) {
-				break;
+			if (this.peersAtTip.has(peer)) {
+				continue;
+			}
+
+			try {
+				const targetHeight = this.localChain.height() + CHUNK_SIZE;
+				const peerChain = await this.syncHeadersFromPeer(peer, targetHeight);
+				const reachedTip = peerChain.height() < targetHeight;
+				if (reachedTip) {
+					this.peersAtTip.add(peer);
+					peer.log(`Reached tip of peer's chain at height ${peerChain.height()}`);
+				}
+			} catch (e) {
+				peer.logError(`Failed to sync headers:`, e);
 			}
 		}
 	}

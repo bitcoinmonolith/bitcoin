@@ -2,6 +2,7 @@ import { Peer } from "./Peer.ts";
 import { PeerMessageHandler } from "./PeerMessageHandler.ts";
 import { PeerSeed } from "./PeerSeed.ts";
 import { getAddr } from "./handlers/GetAddrHandler.ts";
+import { ping } from "./handlers/PingHandler.ts";
 import { handshake } from "./handlers/VersionHandler.ts";
 import { Version } from "./messages/Version.ts";
 
@@ -24,20 +25,22 @@ export class PeerManager {
 	private readonly magic: Uint8Array;
 	private readonly version: Version;
 	private readonly maxConnections: number;
+	private readonly seeds: PeerSeed[];
+	private readonly handlers: Map<string, PeerMessageHandler<unknown>>;
 
 	private readonly connectedPeers = new Map<string, Peer>(); // host:port -> Peer
 	private readonly knownPeers = new Set<string>(); // host:port - discovered peer addresses
 	private readonly failedPeers = new Map<string, FailedPeerInfo>(); // host:port -> failure info
-	private readonly lastAddrRequest = new Map<string, number>(); // host:port -> timestamp of last getaddr request
-	private readonly seeds: PeerSeed[];
-	private readonly handlers: PeerMessageHandler<unknown>[];
+
+	private readonly lastAddrRequest = new WeakMap<Peer, number>(); // host:port -> timestamp of last getaddr request
+	private readonly lastHeartbeat = new WeakMap<Peer, number>(); // host:port -> timestamp of last heartbeat sent
 
 	constructor(init: PeerManager.Init) {
 		this.magic = init.magic;
 		this.version = init.version;
 		this.maxConnections = init.maxConnections;
 		this.seeds = init.seeds;
-		this.handlers = init.handlers;
+		this.handlers = new Map(init.handlers.map((h) => [h.message.command, h]));
 	}
 
 	addKnownPeer(address: Peer.Address): boolean {
@@ -88,6 +91,23 @@ export class PeerManager {
 	}
 
 	async maintainConnections(): Promise<void> {
+		for (const peer of this.connectedPeers.values()) {
+			const lastHeartbeat = this.lastHeartbeat.get(peer) || 0;
+			const now = Date.now();
+			const heartbeatInterval = 2 * 60 * 1000; // 2 minutes
+
+			if (now - lastHeartbeat > heartbeatInterval) {
+				peer.log("💓 Sending heartbeat ping");
+				try {
+					await ping(peer);
+					this.lastHeartbeat.set(peer, now);
+				} catch (e) {
+					peer.logError("💓 Heartbeat ping failed:", e);
+					peer.disconnect();
+				}
+			}
+		}
+
 		if (this.connectedPeers.size >= this.maxConnections) return;
 
 		const needed = this.maxConnections - this.connectedPeers.size;
@@ -171,12 +191,12 @@ export class PeerManager {
 			}
 		});
 
-		for (const handler of this.handlers) {
-			peer.listen((msg) => {
-				if (msg.command !== handler.message.command) return;
-				handler.handle({ peer, data: handler.message.codec.decode(msg.payload), ctx: { peerManager: this } });
-			});
-		}
+		peer.listen((msg) => {
+			this.lastHeartbeat.set(peer, Date.now());
+			const handler = this.handlers.get(msg.command);
+			if (!handler) return;
+			handler.handle({ peer, data: handler.message.codec.decode(msg.payload), ctx: { peerManager: this } });
+		});
 
 		try {
 			await peer.connect();
@@ -188,14 +208,11 @@ export class PeerManager {
 				transPort: peer.localPort,
 			});
 
-			peer.startHeartbeat();
-
 			this.connectedPeers.set(key, peer);
 			this.failedPeers.delete(key);
 
-			const peerKey = `${peer.remoteHost}:${peer.remotePort}`;
-			if (!this.lastAddrRequest.has(peerKey)) {
-				this.lastAddrRequest.set(peerKey, Date.now());
+			if (!this.lastAddrRequest.has(peer)) {
+				this.lastAddrRequest.set(peer, Date.now());
 				const addrs = await getAddr(peer);
 
 				const now = Date.now();
@@ -315,17 +332,15 @@ export class PeerManager {
 		const now = Date.now();
 		const minInterval = 2 * 60 * 1000;
 
-		const peerEntry: [string, Peer] | undefined = this.connectedPeers.entries()
-			.filter(([key]) => now - (this.lastAddrRequest.get(key) || 0) > minInterval)
+		const peer: Peer | undefined = this.connectedPeers.values()
+			.filter((peer) => now - (this.lastAddrRequest.get(peer) || 0) > minInterval)
 			.next().value;
 
-		if (!peerEntry) {
+		if (!peer) {
 			console.log("No peers available to request addresses from (all recently asked)");
 			return;
 		}
-
-		const [key, peer] = peerEntry;
-		this.lastAddrRequest.set(key, now);
+		this.lastAddrRequest.set(peer, now);
 
 		const addrs = await getAddr(peer);
 		const maxAge = 24 * 60 * 60 * 1000;
