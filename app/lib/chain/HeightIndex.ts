@@ -42,7 +42,7 @@ export class HeightStore<T> {
 		}
 	}
 
-	public async append(items: ArrayIterator<T>): Promise<void> {
+	public async append(items: Iterable<T>): Promise<void> {
 		await Deno.mkdir(dirname(this.path), { recursive: true });
 		const file = await Deno.open(this.path, { append: true, create: true });
 		const writer = file.writable.getWriter();

@@ -16,6 +16,7 @@ import { BlockHeightIndex } from "./BlockHeightIndex.ts";
 import { BlockStore } from "./BlockStore.ts";
 import { Chain } from "./Chain.ts";
 import { ChainStore } from "./ChainStore.ts";
+import { StoredBlock } from "./primitives/StoredBlock.ts";
 
 export class ChainManager {
 	public readonly baseDirectory: string;
@@ -248,11 +249,24 @@ export class ChainManager {
 				hashes.push(node.hash);
 			}
 
-			const results = await this.blockDownloader.downloadBatch(hashes);
-			for (const { data, hash } of results) {
-				await this.blockStore.append(data);
+			const blocks = await this.blockDownloader.downloadBatch(hashes);
+			for (const block of blocks) {
+				await this.blockStore.append(StoredBlock.fromBlock(block));
 				const height = cursor++;
-				console.log(`Stored block at height ${height} (${humanize(hash)})`);
+				// TODO: remove this later. read back and verify
+				const storedBlock = await this.blockStore.at(height);
+				if (!storedBlock) {
+					throw new Error(`No stored block at height ${height}`);
+				}
+				const coinbase = block.txs[0]?.vin[0]?.scriptSig;
+				if (!coinbase) {
+					throw new Error(`Downloaded block has no coinbase at height ${height}`);
+				}
+				if (!equals(storedBlock.coinbase.coinbase, coinbase)) {
+					throw new Error(`Stored block hash does not match downloaded block hash at height ${height}`);
+				}
+
+				console.log(`Stored block at height ${height} (${humanize(block.header.hash)})`);
 			}
 		}
 	}

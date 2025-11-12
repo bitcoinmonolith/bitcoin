@@ -1,11 +1,13 @@
 import { Codec } from "@nomadshiba/codec";
 import { concat } from "@std/bytes";
+import { sha256 } from "@noble/hashes/sha2";
 import { BytesView } from "~/lib/BytesView.ts";
 import { CompactSize } from "~/lib/CompactSize.ts";
 import { SequenceLock } from "~/lib/satoshi/primitives/weirdness/SequenceLock.ts";
 import { TimeLock } from "~/lib/satoshi/primitives/weirdness/TimeLock.ts";
 
 export type Tx = Readonly<{
+	txId: Uint8Array;
 	version: number;
 	vin: TxIn[];
 	vout: TxOut[];
@@ -14,7 +16,7 @@ export type Tx = Readonly<{
 }>;
 
 export type TxIn = Readonly<{
-	txId: Uint8Array; // 32 bytes, LE on wire
+	txId: Uint8Array;
 	vout: number;
 	scriptSig: Uint8Array;
 	sequenceLock: SequenceLock;
@@ -22,14 +24,14 @@ export type TxIn = Readonly<{
 }>;
 
 export type TxOut = Readonly<{
-	value: bigint; // 8 bytes, LE
+	value: bigint;
 	scriptPubKey: Uint8Array;
 }>;
 
 export class TxCodec extends Codec<Tx> {
 	public readonly stride = -1;
 
-	public encode(tx: Tx): Uint8Array {
+	public encode(tx: Omit<Tx, "txId">): Uint8Array {
 		const chunks: Uint8Array[] = [];
 
 		// version (int32 LE)
@@ -186,6 +188,7 @@ export class TxCodec extends Codec<Tx> {
 		offset += 4;
 
 		const tx: Tx = {
+			txId: sha256(sha256(bytes.subarray(0, offset))),
 			version,
 			vin,
 			vout,

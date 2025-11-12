@@ -1,5 +1,5 @@
 import { Codec } from "@nomadshiba/codec";
-import { u48 } from "../../primitives/U48.ts";
+import { u48 } from "~/lib/primitives/U48.ts";
 
 // I thought about pointing to blockHeight and blockOffset instead,
 // because offset would be 24bit instead.

@@ -1,16 +1,10 @@
-import { sha256 } from "@noble/hashes/sha2";
 import { equals } from "@std/bytes";
-import { PeerManager } from "~/lib/satoshi/p2p/PeerManager.ts";
 import { Peer } from "~/lib/satoshi/p2p/Peer.ts";
-import { GetDataMessage } from "~/lib/satoshi/p2p/messages/GetData.ts";
+import { PeerManager } from "~/lib/satoshi/p2p/PeerManager.ts";
 import { BlockMessage } from "~/lib/satoshi/p2p/messages/Block.ts";
+import { GetDataMessage } from "~/lib/satoshi/p2p/messages/GetData.ts";
 import { Block } from "~/lib/satoshi/primitives/Block.ts";
-import { BlockHeader } from "../satoshi/primitives/BlockHeader.ts";
-
-export type BlockDownloadResult = {
-	hash: Uint8Array;
-	data: Uint8Array;
-};
+import { humanize } from "../logging/human.ts";
 
 /**
  * BlockDownloader handles downloading block bodies from peers.
@@ -27,7 +21,7 @@ export class BlockDownloader {
 	 * Download a single block by hash.
 	 * Tries multiple peers if one fails.
 	 */
-	public async downloadBlock(hash: Uint8Array): Promise<BlockDownloadResult> {
+	public async downloadBlock(hash: Uint8Array): Promise<Block> {
 		const maxAttempts = 5;
 		let attempt = 0;
 		const triedPeers = new Set<Peer>();
@@ -44,30 +38,12 @@ export class BlockDownloader {
 			triedPeers.add(peer);
 
 			try {
-				peer.log(
-					`Requesting block ${hash.slice(0, 4).reduce((s, b) => s + b.toString(16).padStart(2, "0"), "")}`,
-				);
-
-				const blockPromise = peer.expectRaw(BlockMessage, (payload) => {
-					const headerBytes = payload.subarray(0, BlockHeader.stride);
-					const receivedHash = sha256(sha256(headerBytes));
-					return equals(receivedHash, hash);
-				});
-
-				// Request the block with witness data
+				peer.log(`Requesting block ${humanize(hash)} (attempt ${attempt}/${maxAttempts})`);
+				const blockPromise = peer.expect(BlockMessage, (payload) => equals(payload.header.hash, hash));
 				await peer.send(GetDataMessage, { inventory: [{ type: "WITNESS_BLOCK", hash: hash }] });
-
-				const blockData = await blockPromise;
-
-				// Decode to validate structure
-				Block.decode(blockData);
-
+				const block = await blockPromise;
 				peer.log(`Successfully downloaded block`);
-
-				return {
-					hash: hash,
-					data: blockData.slice(), // Copy the data
-				};
+				return block;
 			} catch (e) {
 				peer.logError(`Failed to download block:`, e);
 				// Try next peer
@@ -81,8 +57,8 @@ export class BlockDownloader {
 	 * Download multiple blocks in a batch.
 	 * Downloads them in parallel from different peers.
 	 */
-	public async downloadBatch(hashes: Uint8Array[]): Promise<BlockDownloadResult[]> {
-		const downloads: Promise<BlockDownloadResult>[] = [];
+	public async downloadBatch(hashes: Uint8Array[]): Promise<Block[]> {
+		const downloads: Promise<Block>[] = [];
 
 		for (const hash of hashes) {
 			downloads.push(this.downloadBlock(hash));
@@ -92,7 +68,7 @@ export class BlockDownloader {
 		const results = await Promise.allSettled(downloads);
 
 		// Collect successful downloads
-		const downloadedBlocks: BlockDownloadResult[] = [];
+		const downloadedBlocks: Block[] = [];
 		for (const result of results) {
 			if (result.status === "fulfilled") {
 				downloadedBlocks.push(result.value);

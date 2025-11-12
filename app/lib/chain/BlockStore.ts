@@ -1,14 +1,7 @@
-import { sha256 } from "@noble/hashes/sha2";
 import { exists, existsSync } from "@std/fs";
 import { dirname, join } from "@std/path";
-import { Tx } from "../satoshi/primitives/Tx.ts";
-import { SequenceLock } from "../satoshi/primitives/weirdness/SequenceLock.ts";
-import { TimeLock } from "../satoshi/primitives/weirdness/TimeLock.ts";
 import { BlockHeightIndex } from "./BlockHeightIndex.ts";
 import { StoredBlock } from "./primitives/StoredBlock.ts";
-import { StoredTx } from "./primitives/StoredTx.ts";
-import { StoredTxInput } from "./primitives/StoredTxInput.ts";
-import { StoredTxOutput } from "./primitives/StoredTxOutput.ts";
 
 export namespace BlockStore {
 	export type Init = {
@@ -56,46 +49,19 @@ export class BlockStore {
 		return this.currentFile;
 	}
 
-	public async append(blockBody: Uint8Array): Promise<void> {
-		const txs: StoredTx[] = [];
-		let offset = 0;
-		while (offset < blockBody.length) {
-			const [tx, bytesRead] = Tx.decode(blockBody.subarray(offset));
-			const txId = sha256(sha256(Tx.encode(tx)));
-			txs.push({
-				txId,
-				lockTime: TimeLock.encode(tx.lockTime),
-				version: tx.version,
-				vin: tx.vin.map((vin): StoredTxInput => ({
-					kind: "unresolved",
-					value: {
-						prevOut: {
-							txId: vin.txId,
-							vout: vin.vout,
-						},
-						scriptSig: vin.scriptSig,
-						sequence: SequenceLock.encode(vin.sequenceLock),
-						witness: vin.witness,
-					},
-				})),
-				vout: tx.vout.map((vout): StoredTxOutput => ({
-					scriptType: "raw",
-					scriptPubKey: vout.scriptPubKey,
-					value: vout.value,
-					spent: false,
-				})),
-			});
-			offset += bytesRead;
-		}
+	public async append(block: StoredBlock): Promise<void> {
+		const blockBytes = StoredBlock.encode(block);
 
-		const block = StoredBlock.encode(txs);
-		const file = await this.ensureCurrentFile(block.byteLength);
+		const file = await this.ensureCurrentFile(blockBytes.byteLength);
 
-		const writeResult = await file.write(block);
-		if (writeResult < block.byteLength) {
+		const writeResult = await file.write(blockBytes);
+		if (writeResult < blockBytes.byteLength) {
 			throw new Error("Could not write entire block to storage");
 		}
-		this.pointer += block.byteLength;
+
+		await this.pointerIndex.append([this.pointer]);
+
+		this.pointer += blockBytes.byteLength;
 	}
 
 	public async truncate(blockHeight: number): Promise<void> {
@@ -133,55 +99,27 @@ export class BlockStore {
 	}
 
 	public async read(pointer: number, length: number): Promise<Uint8Array> {
-		const startFileId = Math.floor(pointer / this.maxFileSize);
-		const startFileOffset = pointer % this.maxFileSize;
+		const fileId = Math.floor(pointer / this.maxFileSize);
+		const fileOffset = pointer % this.maxFileSize;
 
-		const endPointer = pointer + length;
-		const endFileId = Math.floor(endPointer / this.maxFileSize);
-		const endFileOffset = endPointer % this.maxFileSize;
-
-		const chunks: Uint8Array[] = [];
-
-		for (let fileId = startFileId; fileId <= endFileId; fileId++) {
-			const path = this.getFilePath(fileId);
-			if (!existsSync(path)) {
-				throw new Error(`Block file ${path} does not exist`);
-			}
-
-			const file = await Deno.open(path, { read: true });
-			try {
-				let readStart = 0;
-				let readEnd = this.maxFileSize;
-
-				if (fileId === startFileId) {
-					readStart = startFileOffset;
-				}
-				if (fileId === endFileId) {
-					readEnd = endFileOffset;
-				}
-
-				const readLength = readEnd - readStart;
-				const buffer = new Uint8Array(readLength);
-				await file.seek(readStart, Deno.SeekMode.Start);
-				const bytesRead = await file.read(buffer);
-				if (bytesRead === null || bytesRead < readLength) {
-					throw new Error(`Could not read enough data from block file ${path}`);
-				}
-				chunks.push(buffer);
-			} finally {
-				file.close();
-			}
+		const path = this.getFilePath(fileId);
+		if (!existsSync(path)) {
+			throw new Error(`Block file ${path} does not exist`);
 		}
 
-		// Concatenate chunks into a single Uint8Array
-		const result = new Uint8Array(length);
-		let offset = 0;
-		for (const chunk of chunks) {
-			result.set(chunk, offset);
-			offset += chunk.length;
+		const file = await Deno.open(path, { read: true });
+		try {
+			await file.seek(fileOffset, Deno.SeekMode.Start);
+			const buffer = new Uint8Array(length);
+			const bytesRead = await file.read(buffer);
+			if (bytesRead === null || bytesRead < length) {
+				console.log("bytesRead:", bytesRead, "requested length:", length);
+				throw new Error("Could not read full block data from storage");
+			}
+			return buffer;
+		} finally {
+			file.close();
 		}
-
-		return result;
 	}
 
 	public async update(pointer: number, data: Uint8Array): Promise<void> {
@@ -209,6 +147,17 @@ export class BlockStore {
 
 	public async flush(): Promise<void> {
 		await this.currentFile?.sync();
+	}
+
+	public async at(height: number): Promise<StoredBlock> {
+		const pointer = this.pointerIndex.at(height);
+		if (pointer === undefined) {
+			throw new Error(`No block found at height ${height}`);
+		}
+
+		const next4Mb = await this.read(pointer, 4 * 1024 * 1024);
+		const [block] = StoredBlock.decode(next4Mb);
+		return block;
 	}
 
 	public height(): number {
