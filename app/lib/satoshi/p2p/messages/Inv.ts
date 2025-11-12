@@ -42,7 +42,7 @@ export class InvMessageCodec extends Codec<InvMessage> {
 		return bytes;
 	}
 
-	public decode(bytes: Uint8Array): InvMessage {
+	public decode(bytes: Uint8Array): [InvMessage, number] {
 		let offset = 0;
 		const count = bytes[offset++]!;
 		const inventory = [];
@@ -58,7 +58,7 @@ export class InvMessageCodec extends Codec<InvMessage> {
 			offset += 36;
 		}
 
-		return { inventory };
+		return [{ inventory }, offset];
 	}
 }
 

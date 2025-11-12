@@ -73,7 +73,7 @@ export class KV<
 			query = query.where(`k${i}`, "=", this.kCodec[i]!.encode(k));
 		}
 		const rows = await query.execute();
-		return rows.map((row) => this.vCodec.decode(row.v));
+		return rows.map((row) => this.vCodec.decode(row.v)[0]);
 	}
 
 	public async getRaw(key: PartialTuple<K>): Promise<Uint8Array[]> {
@@ -92,8 +92,8 @@ export class KV<
 		);
 		const rows = await query.execute();
 		return rows.map((row) => {
-			const key = this.kCodec.map((codec, i) => codec.decode(row[`k${i}`]!)) as never as K;
-			const value = this.vCodec.decode(row.v);
+			const key = this.kCodec.map((codec, i) => codec.decode(row[`k${i}`]!)[0]) as never as K;
+			const value = this.vCodec.decode(row.v)[0];
 			return [key, value] as [K, V];
 		});
 	}

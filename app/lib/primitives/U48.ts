@@ -13,15 +13,15 @@ export class U48 extends Codec<number> {
 		return bytes;
 	}
 
-	public decode(data: Uint8Array): number {
-		if (data.length !== this.stride) {
+	public decode(data: Uint8Array): [number, number] {
+		if (data.length < this.stride) {
 			throw new Error("Invalid data length for U48");
 		}
 		let value = 0;
 		for (let i = 0; i < this.stride; i++) {
 			value |= data[i]! << (i * 8);
 		}
-		return value;
+		return [value, this.stride];
 	}
 }
 

@@ -77,7 +77,7 @@ export class VersionMessageCodec extends Codec<VersionMessage> {
 		return bytes.subarray(0, offset);
 	}
 
-	public decode(bytes: Uint8Array): VersionMessage {
+	public decode(bytes: Uint8Array): [VersionMessage, number] {
 		const view = new BytesView(bytes);
 		let offset = 0;
 
@@ -122,21 +122,24 @@ export class VersionMessageCodec extends Codec<VersionMessage> {
 
 		const relay = !!bytes[offset++];
 
-		return {
-			version,
-			services,
-			timestamp,
-			recvServices,
-			recvIP,
-			recvPort,
-			transServices,
-			transIP,
-			transPort,
-			nonce,
-			userAgent,
-			startHeight,
-			relay,
-		};
+		return [
+			{
+				version,
+				services,
+				timestamp,
+				recvServices,
+				recvIP,
+				recvPort,
+				transServices,
+				transIP,
+				transPort,
+				nonce,
+				userAgent,
+				startHeight,
+				relay,
+			},
+			offset,
+		];
 	}
 }
 

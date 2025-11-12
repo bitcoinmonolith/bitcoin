@@ -51,7 +51,7 @@ export class GetDataMessageCodec extends Codec<GetDataMessage> {
 		return bytes;
 	}
 
-	public decode(bytes: Uint8Array): GetDataMessage {
+	public decode(bytes: Uint8Array): [GetDataMessage, number] {
 		const [count, countSize] = CompactSize.decode(bytes, 0);
 		let offset = countSize;
 
@@ -67,7 +67,7 @@ export class GetDataMessageCodec extends Codec<GetDataMessage> {
 
 			offset += 36;
 		}
-		return { inventory };
+		return [{ inventory }, offset];
 	}
 }
 

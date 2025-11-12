@@ -23,14 +23,14 @@ export class BlockHeaderCodec extends Struct<BlockHeader> {
 		});
 	}
 
-	public override decode(bytes: Uint8Array): BlockHeader {
+	public override decode(bytes: Uint8Array): [BlockHeader, number] {
 		if (bytes.length < this.stride) {
 			throw new Error(`Not enough bytes to decode BlockHeader: need ${this.stride}, got ${bytes.length}`);
 		}
 
-		const header = super.decode(bytes);
-		bytesCache.set(header, bytes);
-		return header;
+		const [header, bytesRead] = super.decode(bytes);
+		bytesCache.set(header, bytes.subarray(0, bytesRead));
+		return [header, bytesRead];
 	}
 }
 

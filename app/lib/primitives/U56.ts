@@ -13,15 +13,15 @@ export class U56 extends Codec<bigint> {
 		return bytes;
 	}
 
-	public decode(data: Uint8Array): bigint {
-		if (data.length !== this.stride) {
+	public decode(data: Uint8Array): [bigint, number] {
+		if (data.length < this.stride) {
 			throw new Error("Invalid data length for U56");
 		}
 		let value = 0n;
 		for (let i = 0; i < this.stride; i++) {
 			value |= BigInt(data[i]!) << BigInt(i * 8);
 		}
-		return value;
+		return [value, this.stride];
 	}
 }
 

@@ -35,7 +35,7 @@ export class HeightStore<T> {
 				if (bytesRead !== this.codec.stride) {
 					throw new Error("Failed to read full item from index file");
 				}
-				const item = this.codec.decode(itemBytes);
+				const [item] = this.codec.decode(itemBytes);
 				this.memory.push(item);
 			}
 			file.close();

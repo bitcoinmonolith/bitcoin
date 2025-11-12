@@ -60,19 +60,27 @@ export class PeerManager {
 	}
 
 	getKnownPeers(): Array<Peer.Address> {
-		return Array.from(this.knownPeers).map((key) => {
+		return this.knownPeers.values().map((key) => {
 			const [host, port] = key.split(":");
 			return { host: host!, port: parseInt(port!) };
-		});
+		}).toArray();
 	}
 
 	peers(): Iterable<Peer> {
 		return this.connectedPeers.values();
 	}
 
-	randomPeer(): Peer | undefined {
+	randomPeer(triedPeers?: Set<Peer>): Peer | undefined {
 		if (this.connectedPeers.size === 0) return undefined;
-		return this.connectedPeers.values().drop(Math.floor(Math.random() * this.connectedPeers.size)).next().value;
+		const available = new Set(this.connectedPeers.values());
+		if (triedPeers) {
+			for (const peer of triedPeers) {
+				available.delete(peer);
+			}
+		}
+		if (available.size === 0) return undefined;
+		const index = Math.floor(Math.random() * available.size);
+		return available.values().drop(index).next().value;
 	}
 
 	disconnectAll(): void {
@@ -213,7 +221,7 @@ export class PeerManager {
 				if (!handler) return;
 				handler.handle({
 					peer: newPeer,
-					data: handler.message.codec.decode(msg.payload),
+					data: handler.message.codec.decode(msg.payload)[0],
 					ctx: { peerManager: this },
 				});
 			});

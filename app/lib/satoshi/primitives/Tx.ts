@@ -91,7 +91,7 @@ export class TxCodec extends Codec<Tx> {
 		return concat(chunks);
 	}
 
-	public decode(bytes: Uint8Array): Tx {
+	public decode(bytes: Uint8Array): [Tx, number] {
 		let offset = 0;
 
 		// version (int32 LE)
@@ -199,11 +199,8 @@ export class TxCodec extends Codec<Tx> {
 		} else {
 			bytesCache.set(tx, bytes.subarray(0, offset));
 		}
-		this.lastOffset = offset;
-		return tx;
+		return [tx, offset];
 	}
-
-	public lastOffset = 0;
 }
 
 export const Tx = new TxCodec();

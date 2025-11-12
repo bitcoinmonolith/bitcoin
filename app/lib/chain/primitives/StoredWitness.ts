@@ -8,8 +8,9 @@ export class StoredWitnessCodec extends Codec<Uint8Array> {
 		return StoredWitnessEnum.encode(detectPattern(bytes));
 	}
 
-	decode(data: Uint8Array): Uint8Array {
-		return reconstructWitness(StoredWitnessEnum.decode(data));
+	decode(data: Uint8Array): [Uint8Array, number] {
+		const [enumValue, bytesRead] = StoredWitnessEnum.decode(data);
+		return [reconstructWitness(enumValue), bytesRead];
 	}
 }
 

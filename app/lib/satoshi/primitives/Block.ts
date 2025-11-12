@@ -26,22 +26,21 @@ export class BlockCodec extends Codec<Block> {
 		return concatBytes(headerBytes, countBytes, ...txsBytes);
 	}
 
-	public decode(bytes: Uint8Array): Block {
+	public decode(bytes: Uint8Array): [Block, number] {
 		let offset = 0;
 
-		const header = BlockHeader.decode(bytes.subarray(offset, offset + 80));
-		offset += 80;
+		const [header, headerBytes] = BlockHeader.decode(bytes.subarray(offset));
+		offset += headerBytes;
 
 		const [txCount, off2] = CompactSize.decode(bytes, offset);
 		offset = off2;
 
 		const txs: Tx[] = [];
 		for (let i = 0; i < txCount; i++) {
-			const tx = Tx.decode(bytes.subarray(offset));
-			const newOff = Tx.lastOffset;
+			const [tx, txBytesRead] = Tx.decode(bytes.subarray(offset));
 
 			// TODO: Test, remove later
-			const txBytes = bytes.subarray(offset, offset + newOff);
+			const txBytes = bytes.subarray(offset, offset + txBytesRead);
 			const txEncoded = Tx.encode(tx);
 			if (!equals(txBytes, txEncoded)) {
 				console.error("Original bytes:", humanize(txBytes));
@@ -50,14 +49,14 @@ export class BlockCodec extends Codec<Block> {
 			}
 
 			txs.push(tx);
-			offset += newOff;
+			offset += txBytesRead;
 		}
 
 		if (txs.length !== txCount) {
 			throw new Error(`Transaction count mismatch: expected ${txCount}, got ${txs.length}`);
 		}
 
-		return { header, txs };
+		return [{ header, txs }, offset];
 	}
 }
 

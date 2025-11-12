@@ -43,7 +43,7 @@ export class GetHeadersMessageCodec extends Codec<GetHeadersMessage> {
 		return bytes.subarray(0, offset);
 	}
 
-	public decode(bytes: Uint8Array): GetHeadersMessage {
+	public decode(bytes: Uint8Array): [GetHeadersMessage, number] {
 		const view = new BytesView(bytes);
 
 		let offset = 0;
@@ -62,7 +62,7 @@ export class GetHeadersMessageCodec extends Codec<GetHeadersMessage> {
 		const stopHash = bytes.subarray(offset, offset + 32);
 		offset += 32;
 
-		return { version, locators: hashes, stopHash };
+		return [{ version, locators: hashes, stopHash }, offset];
 	}
 }
 

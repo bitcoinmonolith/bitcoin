@@ -35,7 +35,6 @@ const version: Version = {
 	relay: false,
 };
 
-const chainManager = new ChainManager(join(BASE_DATA_DIR, "chain"));
 const peerManager = new PeerManager({
 	magic: BITCOIN_NETWORK_MAGIC,
 	version,
@@ -52,11 +51,14 @@ const peerManager = new PeerManager({
 	],
 });
 
+const chainManager = new ChainManager(join(BASE_DATA_DIR, "chain"), peerManager);
+
 // peerManager.addKnownPeer({ host: "192.168.1.10", port: 8333 });
 
 await chainManager.init();
 while (true) {
 	await peerManager.maintainConnections();
 	await chainManager.syncHeadersFromPeers(peerManager);
+	await chainManager.downloadBlocks(10);
 	await delay(10_000);
 }

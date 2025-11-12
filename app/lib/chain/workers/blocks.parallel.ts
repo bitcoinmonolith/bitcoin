@@ -30,7 +30,7 @@ self.onmessage = (event) => {
 		const txEntriesArr = new Uint8Array(new SharedArrayBuffer());
 
 		for (const blockBuffer of blockBuffers) {
-			const block = BlockMessage.codec.decode(blockBuffer);
+			const [block] = BlockMessage.codec.decode(blockBuffer);
 			const blockTxIds: Uint8Array[] = [];
 
 			txEntriesArr.buffer.grow(block.txs.length * TxEntry.stride);

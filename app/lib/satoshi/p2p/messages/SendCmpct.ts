@@ -20,13 +20,16 @@ export class SendCmpctMessageCodec extends Codec<SendCmpctMessage> {
 		return bytes;
 	}
 
-	public decode(bytes: Uint8Array): SendCmpctMessage {
+	public decode(bytes: Uint8Array): [SendCmpctMessage, number] {
 		const view = new BytesView(bytes);
 
-		return {
-			announce: view.getUint8(0) === 1,
-			version: view.getBigUint64(1, true),
-		};
+		return [
+			{
+				announce: view.getUint8(0) === 1,
+				version: view.getBigUint64(1, true),
+			},
+			9,
+		];
 	}
 }
 

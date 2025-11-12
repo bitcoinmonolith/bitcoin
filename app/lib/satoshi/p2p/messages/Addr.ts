@@ -50,7 +50,7 @@ export class AddrMessageCodec extends Codec<AddrMessage> {
 		return bytes.subarray(0, offset);
 	}
 
-	public decode(bytes: Uint8Array): AddrMessage {
+	public decode(bytes: Uint8Array): [AddrMessage, number] {
 		const [count, countSize] = CompactSize.decode(bytes, 0);
 		let offset = countSize;
 
@@ -74,7 +74,7 @@ export class AddrMessageCodec extends Codec<AddrMessage> {
 			addresses.push({ timestamp, services, host: ip, port });
 		}
 
-		return { addresses };
+		return [{ addresses }, offset];
 	}
 }
 

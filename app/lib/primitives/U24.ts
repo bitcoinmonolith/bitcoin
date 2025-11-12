@@ -14,11 +14,11 @@ export class U24 extends Codec<number> {
 		return arr;
 	}
 
-	public decode(data: Uint8Array): number {
+	public decode(data: Uint8Array): [number, number] {
 		if (data.length < 3) {
 			throw new Error("Not enough bytes for U24");
 		}
-		return data[0]! | (data[1]! << 8) | (data[2]! << 16);
+		return [data[0]! | (data[1]! << 8) | (data[2]! << 16), 3];
 	}
 }
 

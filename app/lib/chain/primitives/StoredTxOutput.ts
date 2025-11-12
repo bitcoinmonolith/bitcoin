@@ -39,6 +39,14 @@ const SCRIPT_TYPE = {
 	p2tr: 6,
 } as const;
 
+const SCRIPT_SIZE: Record<number, number> = {
+	[SCRIPT_TYPE.p2pkh]: 20,
+	[SCRIPT_TYPE.p2sh]: 20,
+	[SCRIPT_TYPE.p2wpkh]: 20,
+	[SCRIPT_TYPE.p2wsh]: 32,
+	[SCRIPT_TYPE.p2tr]: 32,
+};
+
 export type StoredTxOutput =
 	| { value: bigint; spent: boolean; scriptType: "pointer"; pointer: number }
 	| { value: bigint; spent: boolean; scriptType: "script"; scriptPubKey: Uint8Array };
@@ -130,7 +138,7 @@ export class StoredTxOutputCodec extends Codec<StoredTxOutput> {
 		return out;
 	}
 
-	decode(data: Uint8Array): StoredTxOutput {
+	decode(data: Uint8Array): [StoredTxOutput, number] {
 		if (data.length < 7) throw new Error("Invalid data length for StoredTxOutput");
 
 		let combined = 0n;
@@ -144,20 +152,36 @@ export class StoredTxOutputCodec extends Codec<StoredTxOutput> {
 		const typeId = Number(bits & 0xfn);
 		const payload = data.subarray(7);
 
+		let bytesRead = 7;
+
 		if (typeId === SCRIPT_TYPE.pointer) {
-			if (payload.length !== StoredPointer.stride) throw new Error("Invalid pointer payload length");
-			return {
-				value,
-				spent,
-				scriptType: "pointer",
-				pointer: StoredPointer.decode(payload),
-			};
+			if (payload.length < StoredPointer.stride) throw new Error("Invalid pointer payload length");
+			const [pointer] = StoredPointer.decode(payload);
+			bytesRead += StoredPointer.stride;
+			return [
+				{
+					value,
+					spent,
+					scriptType: "pointer",
+					pointer,
+				},
+				bytesRead,
+			];
 		}
 		if (typeId === SCRIPT_TYPE.raw) {
-			return { value, spent, scriptType: "script", scriptPubKey: payload };
+			return [{ value, spent, scriptType: "script", scriptPubKey: payload }, data.length];
 		}
-		const script = reconstructScript(typeId, payload);
-		return { value, spent, scriptType: "script", scriptPubKey: script };
+
+		// Fixed-size payloads based on typeId
+
+		const payloadSize = SCRIPT_SIZE[typeId];
+		if (payloadSize === undefined) {
+			throw new Error(`Unknown type ID: ${typeId}`);
+		}
+
+		bytesRead += payloadSize;
+		const script = reconstructScript(typeId, payload.subarray(0, payloadSize));
+		return [{ value, spent, scriptType: "script", scriptPubKey: script }, bytesRead];
 	}
 }
 

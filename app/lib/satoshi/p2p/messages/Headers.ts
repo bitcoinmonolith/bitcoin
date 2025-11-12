@@ -41,7 +41,7 @@ export class HeadersMessageCodec extends Codec<HeadersMessage> {
 		return out;
 	}
 
-	public decode(bytes: Uint8Array): HeadersMessage {
+	public decode(bytes: Uint8Array): [HeadersMessage, number] {
 		let offset = 0;
 
 		const [count, bytesRead] = CompactSize.decode(bytes, offset);
@@ -55,18 +55,18 @@ export class HeadersMessageCodec extends Codec<HeadersMessage> {
 			if (offset + BlockHeader.stride > bytes.length) {
 				throw new Error("Incomplete header data");
 			}
-			const headerBytes = bytes.subarray(offset, offset + BlockHeader.stride);
-			offset += BlockHeader.stride;
+			const [header, headerBytes] = BlockHeader.decode(bytes.subarray(offset));
+			offset += headerBytes;
 
 			const txCount = bytes[offset++];
 			if (txCount !== 0x00) {
 				throw new Error("Invalid tx count in headers message");
 			}
 
-			headers.push(BlockHeader.decode(headerBytes));
+			headers.push(header);
 		}
 
-		return { headers };
+		return [{ headers }, offset];
 	}
 }
 

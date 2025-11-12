@@ -9,8 +9,8 @@ export class SendHeadersMessageCodec extends Codec<SendHeadersMessage> {
 	public encode(_: SendHeadersMessage): Uint8Array {
 		return new Uint8Array(0);
 	}
-	public decode(_: Uint8Array): SendHeadersMessage {
-		return null;
+	public decode(_: Uint8Array): [SendHeadersMessage, number] {
+		return [null, 0];
 	}
 }
 

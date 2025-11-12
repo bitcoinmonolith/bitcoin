@@ -4,7 +4,7 @@ import { equals } from "@std/bytes";
 import { join } from "@std/path";
 import { verifyProofOfWork, workFromHeader } from "~/lib/chain/utils.ts";
 import { CompactSize } from "~/lib/CompactSize.ts";
-import { GENESIS_BLOCK_HASH, GENESIS_BLOCK_HEADER } from "~/lib/constants.ts";
+import { GENESIS_BLOCK, GENESIS_BLOCK_HASH, GENESIS_BLOCK_HEADER } from "~/lib/constants.ts";
 import { humanize } from "~/lib/logging/human.ts";
 import { GetHeadersMessage } from "~/lib/satoshi/p2p/messages/GetHeaders.ts";
 import { HeadersMessage } from "~/lib/satoshi/p2p/messages/Headers.ts";
@@ -13,6 +13,8 @@ import { PeerManager } from "~/lib/satoshi/p2p/PeerManager.ts";
 import { BlockHeader } from "~/lib/satoshi/primitives/BlockHeader.ts";
 import { Chain } from "./Chain.ts";
 import { ChainStore } from "./ChainStore.ts";
+import { BlockStore } from "./BlockStore.ts";
+import { BlockDownloader } from "./BlockDownloader.ts";
 
 export class ChainManager {
 	public readonly baseDirectory: string;
@@ -20,22 +22,28 @@ export class ChainManager {
 
 	private localChain: Chain;
 	private readonly chainStore: ChainStore;
+	private readonly blockStore: BlockStore;
+	private readonly blockDownloader: BlockDownloader;
 	private readonly hashToHeight: Map<bigint, number>;
 	private readonly prevHashToHeight: Map<bigint, number>;
 	private readonly blacklist = new Set<bigint>();
 
-	constructor(baseDirectory: string, workerCount = navigator.hardwareConcurrency || 4) {
+	constructor(baseDirectory: string, peerManager: PeerManager, workerCount = navigator.hardwareConcurrency || 4) {
 		console.log(`Using ${workerCount} workers`);
 		this.workerCount = workerCount;
 		this.baseDirectory = baseDirectory;
 
 		this.localChain = new Chain([]);
 		this.chainStore = new ChainStore(join(this.baseDirectory, "headers.dat"));
+		this.blockStore = new BlockStore(join(this.baseDirectory, "blocks"));
+		this.blockDownloader = new BlockDownloader(peerManager);
 		this.hashToHeight = new Map();
 		this.prevHashToHeight = new Map();
 	}
 
 	public async init(): Promise<void> {
+		await this.blockStore.init();
+
 		this.chainStore.load(this.localChain);
 		if (this.localChain.length() === 0) {
 			const genesisWork = workFromHeader(GENESIS_BLOCK_HASH);
@@ -46,7 +54,16 @@ export class ChainManager {
 			});
 			await this.chainStore.append(this.localChain.values());
 			console.log(`Initialized new chain with genesis block, work=${genesisWork}`);
+
+			// Store genesis block
+			await this.blockStore.appendBlock(0, GENESIS_BLOCK);
+			console.log(`Stored genesis block`);
 		}
+
+		// Set download cursor to the highest block we have stored
+		const storedHeight = this.blockStore.getHighestHeight();
+		this.localChain.setDownloadCursor(storedHeight + 1);
+
 		this.reindexChain();
 	}
 
@@ -216,6 +233,75 @@ export class ChainManager {
 			peer.log(
 				`Kept existing tip. Height=${this.localChain.height()} Work=${this.localChain.tip().cumulativeWork}`,
 			);
+		}
+	}
+
+	public async downloadBlocks(batchSize = 10): Promise<void> {
+		const cursor = this.localChain.getDownloadCursor();
+		const tipHeight = this.localChain.height();
+
+		if (cursor > tipHeight) {
+			console.log(`All blocks downloaded (cursor=${cursor}, tip=${tipHeight})`);
+			return;
+		}
+
+		const remaining = tipHeight - cursor + 1;
+		const toDownload = Math.min(batchSize, remaining);
+
+		console.log(`Downloading ${toDownload} blocks starting from height ${cursor} (${remaining} remaining)`);
+
+		try {
+			const blocksToDownload: Array<Uint8Array> = [];
+			for (let i = 0; i < toDownload; i++) {
+				const height = cursor + i;
+				const node = this.localChain.at(height);
+				if (!node) break;
+
+				blocksToDownload.push(node.hash);
+			}
+
+			const blocks = await this.blockDownloader.downloadBatch(blocksToDownload);
+
+			const blocksByHash = new Map<bigint, { height: number; data: Uint8Array }>();
+			for (const block of blocks) {
+				const hashNum = bytesToNumberLE(block.hash);
+				const height = this.hashToHeight.get(hashNum);
+				if (height !== undefined) {
+					blocksByHash.set(hashNum, { height, data: block.data });
+				}
+			}
+
+			for (const hash of blocksToDownload) {
+				// Verify this is the expected height
+				if (height !== this.localChain.getDownloadCursor()) {
+					console.warn(
+						`Skipping block at height ${height}, expected ${this.localChain.getDownloadCursor()}`,
+					);
+					break;
+				}
+
+				const hashNum = bytesToNumberLE(hash);
+				const blockData = blocksByHash.get(hashNum);
+
+				if (!blockData) {
+					console.warn(`Failed to download block at height ${height}`);
+					break;
+				}
+
+				// Store the block
+				await this.blockStore.appendBlock(height, blockData.data);
+
+				// Increment cursor
+				this.localChain.incrementDownloadCursor();
+
+				console.log(
+					`Stored block at height ${height}, cursor now at ${this.localChain.getDownloadCursor()}`,
+				);
+			}
+
+			await this.blockStore.flush();
+		} catch (e) {
+			console.error(`Failed to download blocks:`, e);
 		}
 	}
 }

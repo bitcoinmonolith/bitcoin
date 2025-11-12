@@ -10,8 +10,8 @@ export class GetAddrMessageCodec extends Codec<GetAddrMessage> {
 		return new Uint8Array(0);
 	}
 
-	public decode(_bytes: Uint8Array): GetAddrMessage {
-		return {};
+	public decode(_bytes: Uint8Array): [GetAddrMessage, number] {
+		return [{}, 0];
 	}
 }
 

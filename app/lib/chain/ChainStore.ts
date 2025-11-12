@@ -59,7 +59,7 @@ export class ChainStore {
 				if (bytesRead !== Item.stride) {
 					throw new Error("Failed to read full header from headers.dat");
 				}
-				const header = Item.decode(itemBytes);
+				const [header] = Item.decode(itemBytes);
 				const prevHash = header.subarray(
 					BlockHeader.shape.version.stride,
 					BlockHeader.shape.version.stride + BlockHeader.shape.prevHash.stride,

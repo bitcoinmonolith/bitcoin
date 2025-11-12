@@ -18,12 +18,15 @@ export class PingMessageCodec extends Codec<PingMessage> {
 		return bytes;
 	}
 
-	public decode(bytes: Uint8Array): PingMessage {
+	public decode(bytes: Uint8Array): [PingMessage, number] {
 		const view = new BytesView(bytes);
 
-		return {
-			nonce: view.getBigUint64(0, true),
-		};
+		return [
+			{
+				nonce: view.getBigUint64(0, true),
+			},
+			8,
+		];
 	}
 }
 

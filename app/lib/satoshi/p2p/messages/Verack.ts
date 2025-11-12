@@ -10,8 +10,8 @@ export class VerackMessageCodec extends Codec<VerackMessage> {
 		return new Uint8Array(0);
 	}
 
-	public decode(_: Uint8Array): VerackMessage {
-		return null;
+	public decode(_: Uint8Array): [VerackMessage, number] {
+		return [null, 0];
 	}
 }
 

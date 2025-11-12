@@ -18,12 +18,15 @@ export class PongMessageCodec extends Codec<PongMessage> {
 		return bytes;
 	}
 
-	public decode(bytes: Uint8Array): PongMessage {
+	public decode(bytes: Uint8Array): [PongMessage, number] {
 		const view = new BytesView(bytes);
 
-		return {
-			nonce: view.getBigUint64(0, true),
-		};
+		return [
+			{
+				nonce: view.getBigUint64(0, true),
+			},
+			8,
+		];
 	}
 }
 

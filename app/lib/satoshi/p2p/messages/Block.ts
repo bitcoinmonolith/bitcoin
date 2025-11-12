@@ -13,8 +13,9 @@ export class BlockMessageCodec extends Codec<BlockMessage> {
 		return Block.encode(data.block);
 	}
 
-	public decode(bytes: Uint8Array): BlockMessage {
-		return { block: Block.decode(bytes) };
+	public decode(bytes: Uint8Array): [BlockMessage, number] {
+		const [block, bytesRead] = Block.decode(bytes);
+		return [{ block }, bytesRead];
 	}
 }
 
