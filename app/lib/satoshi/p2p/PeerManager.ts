@@ -103,7 +103,7 @@ export class PeerManager {
 					this.lastHeartbeat.set(peer, now);
 				} catch (e) {
 					peer.logError("💓 Heartbeat ping failed:", e);
-					peer.disconnect();
+					peer.disconnect({ type: "heartbeat_timeout" });
 				}
 			}
 		}

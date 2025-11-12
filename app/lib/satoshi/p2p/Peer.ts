@@ -182,8 +182,6 @@ export class Peer {
 	private readonly listeners: Set<Peer.Listener> = new Set();
 	private readonly disconnectCallbacks: Set<Peer.DisconnectCallback> = new Set();
 	private connection: Deno.Conn | null = null;
-	private heartbeatTimer: number | null = null;
-	private lastActivity = 0;
 
 	constructor(address: Peer.Address, magic: Uint8Array) {
 		if (magic.length !== MAGIC_LEN) throw new Error("magic must be 4 bytes");
@@ -209,43 +207,14 @@ export class Peer {
 		}
 
 		this.#connected = true;
-		this.lastActivity = Date.now();
 
 		// detached read loop (errors handled internally)
 		void this.readLoop(this.connection);
 	}
 
-	startHeartbeat(intervalMs = 60_000, timeoutMs = 120_000): void {
-		if (this.heartbeatTimer !== null) return;
-
-		this.heartbeatTimer = setInterval(() => {
-			if (!this.#connected) {
-				if (this.heartbeatTimer !== null) {
-					clearInterval(this.heartbeatTimer);
-					this.heartbeatTimer = null;
-				}
-				return;
-			}
-
-			const now = Date.now();
-			const timeSinceActivity = now - this.lastActivity;
-
-			if (timeSinceActivity > timeoutMs) {
-				this.logWarn(`No activity for ${timeSinceActivity}ms, disconnecting`);
-				this.disconnect({ type: "heartbeat_timeout" });
-			}
-		}, intervalMs);
-	}
-
 	disconnect(reason: Peer.DisconnectReason = { type: "manual" }): void {
 		if (!this.#connected) return;
 		this.#connected = false;
-
-		// Stop heartbeat
-		if (this.heartbeatTimer !== null) {
-			clearInterval(this.heartbeatTimer);
-			this.heartbeatTimer = null;
-		}
 
 		// Close connection
 		if (this.connection) {
@@ -314,7 +283,6 @@ export class Peer {
 		const timer = setTimeout(() => abort.abort(), timeoutMs);
 		try {
 			await conn.write(out);
-			this.lastActivity = Date.now();
 		} catch (e) {
 			if (abort.signal.aborted) {
 				this.disconnect({ type: "write_timeout" });
@@ -388,7 +356,6 @@ export class Peer {
 				}
 				if (n > 0) {
 					q.append(readBuf, n);
-					this.lastActivity = Date.now();
 				}
 
 				// parse as much as possible

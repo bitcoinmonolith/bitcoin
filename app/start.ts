@@ -13,6 +13,8 @@ import { SendCmpctHandler } from "./lib/satoshi/p2p/handlers/SendCmpctHandler.ts
 import { GetAddrHandler } from "./lib/satoshi/p2p/handlers/GetAddrHandler.ts";
 import { delay } from "@std/async";
 
+const BITCOIN_NETWORK_MAGIC = hexToBytes("f9beb4d9");
+
 const SERVICES = {
 	NETWORK: 0x01n,
 	BLOOM: 0x04n,
@@ -20,9 +22,6 @@ const SERVICES = {
 	COMPACT_BLOCKS: 0x20n,
 	NETWORK_LIMITED: 0x10n,
 } as const;
-
-const BITCOIN_NETWORK_MAGIC = hexToBytes("f9beb4d9"); // Mainnet
-// const TESTNET_NETWORK_MAGIC = hexToBytes("0b110907"); // Testnet
 
 const version: Version = {
 	version: 70015,
