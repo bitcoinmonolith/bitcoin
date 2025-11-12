@@ -4,7 +4,7 @@
     "jsr:@noble/curves@1.9.0": "1.9.0",
     "jsr:@noble/hashes@1.8.0": "1.8.0",
     "jsr:@noble/secp256k1@2.3.0": "2.3.0",
-    "jsr:@nomadshiba/codec@^0.0.6": "0.0.6",
+    "jsr:@nomadshiba/codec@^0.0.9": "0.0.9",
     "jsr:@soapbox/kysely-deno-sqlite@2.2.0": "2.2.0",
     "jsr:@std/async@1.0.14": "1.0.14",
     "jsr:@std/bytes@1.0.6": "1.0.6",
@@ -32,8 +32,8 @@
     "@noble/secp256k1@2.3.0": {
       "integrity": "63eb4479a7c548e0ddea1cb5ea9bf7efacafe495e7f1c07bce1b4108df95967f"
     },
-    "@nomadshiba/codec@0.0.6": {
-      "integrity": "d4be39a791da6cbafb4493831845f0c1c70bf7ddafc6605227993e0fc10e6d41"
+    "@nomadshiba/codec@0.0.9": {
+      "integrity": "d760ecc8355a856f60247d0b7920bb5da748ccbe29046894d351f5b961693be6"
     },
     "@soapbox/kysely-deno-sqlite@2.2.0": {
       "integrity": "668ec94600bc4b4d7bd618dd7ca65d4ef30ee61c46ffcb379b6f45203c08517a",
@@ -94,7 +94,7 @@
       "jsr:@noble/curves@1.9.0",
       "jsr:@noble/hashes@1.8.0",
       "jsr:@noble/secp256k1@2.3.0",
-      "jsr:@nomadshiba/codec@^0.0.6",
+      "jsr:@nomadshiba/codec@^0.0.9",
       "jsr:@soapbox/kysely-deno-sqlite@2.2.0",
       "jsr:@std/async@1.0.14",
       "jsr:@std/bytes@1.0.6",
