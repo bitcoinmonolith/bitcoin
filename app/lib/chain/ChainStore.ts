@@ -7,6 +7,7 @@ import { BlockHeader } from "~/lib/satoshi/primitives/BlockHeader.ts";
 import { Chain } from "./Chain.ts";
 import { ChainNode } from "./ChainNode.ts";
 import { verifyProofOfWork, workFromHeader } from "~/lib/chain/utils.ts";
+import { readFileExact } from "../fs.ts";
 
 const Item = new Bytes(BlockHeader.stride);
 
@@ -38,7 +39,7 @@ export class ChainStore {
 		file.close();
 	}
 
-	public load(chain: Chain): void {
+	public async load(chain: Chain): Promise<void> {
 		const path = this.path;
 		const size = existsSync(path) ? Deno.statSync(path).size : 0;
 		if (size % Item.stride !== 0) {
@@ -48,17 +49,14 @@ export class ChainStore {
 		chain.clear();
 
 		if (size > 0) {
-			Deno.mkdirSync(dirname(path), { recursive: true });
-			const file = Deno.openSync(path, { read: true });
+			await Deno.mkdir(dirname(path), { recursive: true });
+			const file = await Deno.open(path, { read: true });
 			const headerCount = size / Item.stride;
 			console.log(`Loading ${headerCount} headers from ${path}`);
 
 			for (let i = 0; i < headerCount; i++) {
 				const itemBytes = new Uint8Array(Item.stride);
-				const bytesRead = file.readSync(itemBytes);
-				if (bytesRead !== Item.stride) {
-					throw new Error("Failed to read full header from headers.dat");
-				}
+				await readFileExact(file, itemBytes);
 				const [header] = Item.decode(itemBytes);
 				const prevHash = header.subarray(
 					BlockHeader.shape.version.stride,

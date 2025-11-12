@@ -19,8 +19,8 @@ import { ChainStore } from "./ChainStore.ts";
 import { StoredBlock } from "./primitives/StoredBlock.ts";
 
 export class ChainManager {
-	public readonly baseDirectory: string;
-	public readonly workerCount: number;
+	private readonly baseDirectory: string;
+	private readonly workerCount: number;
 
 	private localChain: Chain;
 	private readonly chainStore: ChainStore;
@@ -48,7 +48,7 @@ export class ChainManager {
 	}
 
 	public async init(): Promise<void> {
-		this.chainStore.load(this.localChain);
+		await this.chainStore.load(this.localChain);
 		if (this.localChain.length() === 0) {
 			const genesisWork = workFromHeader(GENESIS_BLOCK_HASH);
 			this.localChain.append({
@@ -76,7 +76,7 @@ export class ChainManager {
 		}
 	}
 
-	private peersAtTip: Set<Peer> = new Set();
+	private peersAtTip: WeakSet<Peer> = new WeakSet();
 	async syncHeadersFromPeers(peerManager: PeerManager): Promise<void> {
 		const CHUNK_SIZE = 210_000; // Max headers to fetch per call to prevent infinite header attacks
 
@@ -234,40 +234,34 @@ export class ChainManager {
 	}
 
 	public async downloadBlocks(batchSize: number): Promise<void> {
-		const startHeight = this.blockStore.height();
-		const targetHeight = Math.min(this.localChain.height(), startHeight + batchSize);
-		let cursor = startHeight + 1;
+		const startHeight = this.blockStore.height() + 1;
+		const targetHeight = Math.min(this.localChain.height() + 1, startHeight + batchSize);
+		if (startHeight >= targetHeight) {
+			console.log(`No new blocks to download. Current height: ${startHeight}`);
+			return;
+		}
 
-		while (cursor <= targetHeight) {
-			const toHeight = Math.min(cursor + 99, targetHeight);
-			const hashes: Uint8Array[] = [];
-			for (let height = cursor; height <= toHeight; height++) {
-				const node = this.localChain.at(height);
-				if (!node) {
-					throw new Error(`No block header at height ${height}`);
-				}
-				hashes.push(node.hash);
+		const hashes = this.localChain.values()
+			.drop(startHeight)
+			.take(targetHeight - startHeight)
+			.map((node) => node.hash);
+		const blocks = await this.blockDownloader.downloadBatch(hashes);
+		for (const block of blocks) {
+			const height = await this.blockStore.append(StoredBlock.fromBlock(block));
+			/* // TODO: remove this later. read back and verify
+			const storedBlock = await this.blockStore.block(height);
+			if (!storedBlock) {
+				throw new Error(`No stored block at height ${height}`);
 			}
-
-			const blocks = await this.blockDownloader.downloadBatch(hashes);
-			for (const block of blocks) {
-				await this.blockStore.append(StoredBlock.fromBlock(block));
-				const height = cursor++;
-				// TODO: remove this later. read back and verify
-				const storedBlock = await this.blockStore.at(height);
-				if (!storedBlock) {
-					throw new Error(`No stored block at height ${height}`);
-				}
-				const coinbase = block.txs[0]?.vin[0]?.scriptSig;
-				if (!coinbase) {
-					throw new Error(`Downloaded block has no coinbase at height ${height}`);
-				}
-				if (!equals(storedBlock.coinbase.coinbase, coinbase)) {
-					throw new Error(`Stored block hash does not match downloaded block hash at height ${height}`);
-				}
-
-				console.log(`Stored block at height ${height} (${humanize(block.header.hash)})`);
+			const coinbase = block.txs[0]?.vin[0]?.scriptSig;
+			if (!coinbase) {
+				throw new Error(`Downloaded block has no coinbase at height ${height}`);
 			}
+			if (!equals(storedBlock.coinbaseTx.coinbase, coinbase)) {
+				throw new Error(`Stored block hash does not match downloaded block hash at height ${height}`);
+			} */
+
+			console.log(`Stored block at height ${height} (${humanize(block.header.hash)})`);
 		}
 	}
 }

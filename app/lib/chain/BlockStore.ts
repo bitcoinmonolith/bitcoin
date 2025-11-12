@@ -2,6 +2,7 @@ import { exists, existsSync } from "@std/fs";
 import { dirname, join } from "@std/path";
 import { BlockHeightIndex } from "./BlockHeightIndex.ts";
 import { StoredBlock } from "./primitives/StoredBlock.ts";
+import { readFileExact } from "../fs.ts";
 
 export namespace BlockStore {
 	export type Init = {
@@ -17,7 +18,6 @@ export class BlockStore {
 	private readonly pointerIndex: BlockHeightIndex;
 
 	private pointer: number;
-	private currentFile: Deno.FsFile | null = null;
 
 	constructor(init: BlockStore.Init) {
 		this.baseDirectory = init.baseDirectory;
@@ -32,36 +32,18 @@ export class BlockStore {
 		return join(this.baseDirectory, filename);
 	}
 
-	private async ensureCurrentFile(incomingSize: number): Promise<Deno.FsFile> {
-		const newPointer = this.pointer + incomingSize;
-		const chunkId = Math.floor(newPointer / this.maxFileSize);
-		const chunkOffset = newPointer % this.maxFileSize;
-		const chunkFilePath = this.getFilePath(chunkId);
-
-		await Deno.mkdir(dirname(chunkFilePath), { recursive: true });
-		if (existsSync(chunkFilePath)) {
-			this.currentFile = await Deno.open(chunkFilePath, { read: true, write: true });
-			await this.currentFile.seek(chunkOffset, Deno.SeekMode.Start);
-		} else {
-			this.currentFile = await Deno.open(chunkFilePath, { append: true, create: true, write: true });
-		}
-
-		return this.currentFile;
-	}
-
-	public async append(block: StoredBlock): Promise<void> {
+	public async append(block: StoredBlock): Promise<number> {
 		const blockBytes = StoredBlock.encode(block);
 
-		const file = await this.ensureCurrentFile(blockBytes.byteLength);
+		const filePath = this.getFilePath(Math.floor((this.pointer + blockBytes.byteLength) / this.maxFileSize));
+		await Deno.mkdir(dirname(filePath), { recursive: true });
+		await Deno.writeFile(filePath, blockBytes, { append: true, create: true });
 
-		const writeResult = await file.write(blockBytes);
-		if (writeResult < blockBytes.byteLength) {
-			throw new Error("Could not write entire block to storage");
-		}
-
-		await this.pointerIndex.append([this.pointer]);
+		const height = await this.pointerIndex.append([this.pointer]);
 
 		this.pointer += blockBytes.byteLength;
+
+		return height;
 	}
 
 	public async truncate(blockHeight: number): Promise<void> {
@@ -79,9 +61,7 @@ export class BlockStore {
 			throw new Error(`Block file ${chunkFilePath} does not exist`);
 		}
 
-		this.currentFile?.close();
-		this.currentFile = await Deno.open(chunkFilePath, { read: true, write: true });
-		await this.currentFile.seek(chunkOffset, Deno.SeekMode.Start);
+		await Deno.truncate(chunkFilePath, chunkOffset);
 
 		// Truncate any subsequent files
 		let nextChunkId = chunkId + 1;
@@ -103,19 +83,16 @@ export class BlockStore {
 		const fileOffset = pointer % this.maxFileSize;
 
 		const path = this.getFilePath(fileId);
-		if (!existsSync(path)) {
+		if (!await exists(path)) {
 			throw new Error(`Block file ${path} does not exist`);
 		}
 
 		const file = await Deno.open(path, { read: true });
+		const fileStat = await file.stat();
 		try {
 			await file.seek(fileOffset, Deno.SeekMode.Start);
-			const buffer = new Uint8Array(length);
-			const bytesRead = await file.read(buffer);
-			if (bytesRead === null || bytesRead < length) {
-				console.log("bytesRead:", bytesRead, "requested length:", length);
-				throw new Error("Could not read full block data from storage");
-			}
+			const buffer = new Uint8Array(Math.min(length, fileStat.size - fileOffset));
+			await readFileExact(file, buffer);
 			return buffer;
 		} finally {
 			file.close();
@@ -140,16 +117,7 @@ export class BlockStore {
 		}
 	}
 
-	public close(): void {
-		this.currentFile?.close();
-		this.currentFile = null;
-	}
-
-	public async flush(): Promise<void> {
-		await this.currentFile?.sync();
-	}
-
-	public async at(height: number): Promise<StoredBlock> {
+	public async block(height: number): Promise<StoredBlock> {
 		const pointer = this.pointerIndex.at(height);
 		if (pointer === undefined) {
 			throw new Error(`No block found at height ${height}`);

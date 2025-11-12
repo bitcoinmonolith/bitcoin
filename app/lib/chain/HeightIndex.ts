@@ -1,6 +1,7 @@
 import { Codec } from "@nomadshiba/codec";
 import { existsSync } from "@std/fs";
 import { dirname, join } from "@std/path";
+import { readFileExactSync } from "../fs.ts";
 
 export class HeightStore<T> {
 	public readonly codec: Codec<T>;
@@ -31,10 +32,7 @@ export class HeightStore<T> {
 
 			for (let i = 0; i < itemCount; i++) {
 				const itemBytes = new Uint8Array(this.codec.stride);
-				const bytesRead = file.readSync(itemBytes);
-				if (bytesRead !== this.codec.stride) {
-					throw new Error("Failed to read full item from index file");
-				}
+				readFileExactSync(file, itemBytes);
 				const [item] = this.codec.decode(itemBytes);
 				this.memory.push(item);
 			}
@@ -42,7 +40,7 @@ export class HeightStore<T> {
 		}
 	}
 
-	public async append(items: Iterable<T>): Promise<void> {
+	public async append(items: Iterable<T>): Promise<number> {
 		await Deno.mkdir(dirname(this.path), { recursive: true });
 		const file = await Deno.open(this.path, { append: true, create: true });
 		const writer = file.writable.getWriter();
@@ -51,6 +49,7 @@ export class HeightStore<T> {
 		}
 		file.close();
 		this.memory.push(...items);
+		return this.memory.length - 1;
 	}
 
 	public async truncate(height: number): Promise<void> {

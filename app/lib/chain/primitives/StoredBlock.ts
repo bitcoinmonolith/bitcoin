@@ -10,7 +10,7 @@ import { StoredTxInput } from "./StoredTxInput.ts";
 import { StoredTxOutput } from "./StoredTxOutput.ts";
 
 export type StoredBlock = {
-	coinbase: StoredCoinbaseTx;
+	coinbaseTx: StoredCoinbaseTx;
 	txs: StoredTx[];
 };
 export class StoredBlockCodec extends Codec<StoredBlock> {
@@ -19,7 +19,7 @@ export class StoredBlockCodec extends Codec<StoredBlock> {
 	public encode(value: StoredBlock): Uint8Array {
 		const lengthEncoded = u24.encode(value.txs.length);
 
-		const coinbaseEncoded = StoredCoinbaseTx.encode(value.coinbase);
+		const coinbaseEncoded = StoredCoinbaseTx.encode(value.coinbaseTx);
 		const txsEncoded = value.txs.values().map((tx) => StoredTx.encode(tx));
 		return concat([lengthEncoded, coinbaseEncoded, ...txsEncoded]);
 	}
@@ -38,7 +38,7 @@ export class StoredBlockCodec extends Codec<StoredBlock> {
 			txs.push(tx);
 			offset += txBytes;
 		}
-		return [{ coinbase, txs }, offset];
+		return [{ coinbaseTx: coinbase, txs }, offset];
 	}
 
 	public fromBlock(block: Block): StoredBlock {
@@ -76,7 +76,7 @@ export class StoredBlockCodec extends Codec<StoredBlock> {
 		}
 
 		return {
-			coinbase: {
+			coinbaseTx: {
 				txId: coinbaseTx.txId,
 				lockTime: TimeLock.encode(coinbaseTx.lockTime),
 				version: coinbaseTx.version,

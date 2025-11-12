@@ -57,7 +57,7 @@ export class BlockDownloader {
 	 * Download multiple blocks in a batch.
 	 * Downloads them in parallel from different peers.
 	 */
-	public async downloadBatch(hashes: Uint8Array[]): Promise<Block[]> {
+	public async downloadBatch(hashes: Iterable<Uint8Array>): Promise<Block[]> {
 		const downloads: Promise<Block>[] = [];
 
 		for (const hash of hashes) {
