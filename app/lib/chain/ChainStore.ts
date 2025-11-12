@@ -16,7 +16,7 @@ export class ChainStore {
 		this.path = path;
 	}
 
-	public async append(headers: ArrayIterator<ChainNode>): Promise<void> {
+	public async append(headers: Iterable<ChainNode>): Promise<void> {
 		await Deno.mkdir(dirname(this.path), { recursive: true });
 		console.log(`Saving headers to ${this.path}`);
 		const file = await Deno.open(this.path, { append: true, create: true });
@@ -27,7 +27,7 @@ export class ChainStore {
 			);
 		}
 		file.close();
-		console.log("Headers saved");
+		console.log(`Finished saving headers to ${this.path}`);
 	}
 
 	public async truncate(height: number): Promise<void> {

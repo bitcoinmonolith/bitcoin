@@ -41,7 +41,7 @@ const peerManager = new PeerManager({
 	magic: BITCOIN_NETWORK_MAGIC,
 	version,
 	maxConnections: 8,
-	seeds: [/* { host: "dnsseed.bitcoin.dashjr.org", port: 8333 } */],
+	seeds: [{ seedHost: "dnsseed.bitcoin.dashjr.org", peerPort: 8333 }],
 	handlers: [
 		VersionHandler,
 		PingHandler,
@@ -53,7 +53,7 @@ const peerManager = new PeerManager({
 	],
 });
 
-peerManager.addKnownPeer({ host: "192.168.1.10", port: 8333 });
+// peerManager.addKnownPeer({ host: "192.168.1.10", port: 8333 });
 
 await chainManager.init();
 while (true) {

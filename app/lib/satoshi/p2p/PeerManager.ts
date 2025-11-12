@@ -32,7 +32,7 @@ export class PeerManager {
 	private readonly knownPeers = new Set<string>(); // host:port - discovered peer addresses
 	private readonly failedPeers = new Map<string, FailedPeerInfo>(); // host:port -> failure info
 
-	private readonly lastAddrRequest = new WeakMap<Peer, number>(); // host:port -> timestamp of last getaddr request
+	private readonly lastAddressRequest = new WeakMap<Peer, number>(); // host:port -> timestamp of last getaddr request
 	private readonly lastHeartbeat = new WeakMap<Peer, number>(); // host:port -> timestamp of last heartbeat sent
 
 	constructor(init: PeerManager.Init) {
@@ -111,7 +111,6 @@ export class PeerManager {
 		if (this.connectedPeers.size >= this.maxConnections) return;
 
 		const needed = this.maxConnections - this.connectedPeers.size;
-		console.log(`Need ${needed} more peers to reach target of ${this.maxConnections}`);
 
 		const now = Date.now();
 		const failedPeerRetryTime = 5 * 60 * 1000; // 5 minutes
@@ -127,9 +126,16 @@ export class PeerManager {
 		const unavailableAddrs = failedAddrsSet.union(connectedAddrs);
 		const availableAddrs = this.knownPeers.difference(unavailableAddrs);
 
-		console.log(
-			`Peer stats: known=${this.knownPeers.size}, failed=${this.failedPeers.size}, connected=${this.connectedPeers.size}, available=${availableAddrs.size}`,
-		);
+		const stats = {
+			known: this.knownPeers.size,
+			failed: this.failedPeers.size,
+			connected: this.connectedPeers.size,
+			available: availableAddrs.size,
+			needed,
+			target: this.maxConnections,
+		};
+
+		console.log(`Peer stats:`, stats);
 
 		if (availableAddrs.size > 0) {
 			const addresses = availableAddrs.values().map((key) => {
@@ -152,35 +158,79 @@ export class PeerManager {
 			}
 		}
 
-		// If we ran out of available addresses, request more from connected peers
 		if (
 			availableAddrs.size === 0 &&
 			this.connectedPeers.size > 0 &&
 			this.connectedPeers.size < this.maxConnections
 		) {
-			await this.requestPeerAddresses();
+			let fetched = false;
+			for (const peer of this.connectedPeers.values()) {
+				fetched = await this.discoverFromPeer(peer);
+			}
+			if (fetched) {
+				console.log(`Discovered new peer addresses from connected peers`);
+			} else {
+				console.log(`No peers available to fetch addresses from (all recently asked)`);
+			}
 		}
 
-		// If still need more, discover from DNS seeds
-		if (this.connectedPeers.size < this.maxConnections && availableAddrs.size === 0) {
+		if (
+			this.connectedPeers.size < this.maxConnections &&
+			availableAddrs.size === 0
+		) {
 			for (const seed of this.seeds) {
-				if (this.connectedPeers.size >= this.maxConnections) break;
-				await this.discoverFromDNS(seed, needed);
+				await this.discoverFromDNS(seed);
 			}
 		}
 	}
 
 	private async connectPeer(address: Peer.Address): Promise<Peer | null> {
 		const key = `${address.host}:${address.port}`;
-		const peer = new Peer(address, this.magic);
-		peer.onDisconnect((reason) => {
-			const key = `${peer.remoteHost}:${peer.remotePort}`;
-			this.connectedPeers.delete(key);
+		let peer = this.connectedPeers.get(key);
+		if (!peer) {
+			const newPeer = new Peer(address, this.magic);
+			newPeer.onDisconnect((reason) => {
+				const key = `${newPeer.remoteHost}:${newPeer.remotePort}`;
+				this.connectedPeers.delete(key);
 
-			const reasonType = reason.type;
+				const reasonType = reason.type;
 
-			if (reasonType !== "manual") {
-				peer.logWarn(`Disconnected: ${reasonType}`);
+				if (reasonType !== "manual") {
+					newPeer.logWarn(`Disconnected: ${reasonType}`);
+					const existing = this.failedPeers.get(key);
+					if (existing) {
+						existing.count++;
+						existing.lastFailed = Date.now();
+					} else {
+						this.failedPeers.set(key, { count: 1, lastFailed: Date.now() });
+					}
+				}
+			});
+
+			newPeer.listen((msg) => {
+				this.lastHeartbeat.set(newPeer, Date.now());
+				const handler = this.handlers.get(msg.command);
+				if (!handler) return;
+				handler.handle({
+					peer: newPeer,
+					data: handler.message.codec.decode(msg.payload),
+					ctx: { peerManager: this },
+				});
+			});
+
+			try {
+				await newPeer.connect();
+				await handshake(newPeer, {
+					...this.version,
+					recvIP: newPeer.remoteIp,
+					recvPort: newPeer.remotePort,
+					transIP: newPeer.localIp,
+					transPort: newPeer.localPort,
+				});
+
+				this.connectedPeers.set(key, newPeer);
+				this.failedPeers.delete(key);
+			} catch (e) {
 				const existing = this.failedPeers.get(key);
 				if (existing) {
 					existing.count++;
@@ -188,71 +238,18 @@ export class PeerManager {
 				} else {
 					this.failedPeers.set(key, { count: 1, lastFailed: Date.now() });
 				}
+				newPeer.logError("Failed to connect:", e);
+				return null;
 			}
-		});
 
-		peer.listen((msg) => {
-			this.lastHeartbeat.set(peer, Date.now());
-			const handler = this.handlers.get(msg.command);
-			if (!handler) return;
-			handler.handle({ peer, data: handler.message.codec.decode(msg.payload), ctx: { peerManager: this } });
-		});
-
-		try {
-			await peer.connect();
-			await handshake(peer, {
-				...this.version,
-				recvIP: peer.remoteIp,
-				recvPort: peer.remotePort,
-				transIP: peer.localIp,
-				transPort: peer.localPort,
+			await this.discoverFromPeer(newPeer).catch((e) => {
+				newPeer.logError("Failed to request addresses:", e);
 			});
 
-			this.connectedPeers.set(key, peer);
-			this.failedPeers.delete(key);
-
-			if (!this.lastAddrRequest.has(peer)) {
-				this.lastAddrRequest.set(peer, Date.now());
-				const addrs = await getAddr(peer);
-
-				const now = Date.now();
-				const maxAge = 24 * 60 * 60 * 1000;
-				let added = 0;
-				let stale = 0;
-				let rejected = 0;
-
-				for (const addr of addrs.addresses) {
-					// Filter out stale addresses
-					if (now - addr.timestamp > maxAge) {
-						stale++;
-						continue;
-					}
-
-					if (this.addKnownPeer(addr)) {
-						added++;
-					} else {
-						rejected++;
-					}
-				}
-
-				peer.log(
-					`📬 First connect: ${addrs.addresses.length} addresses: ${added} added, ${stale} stale, ${rejected} rejected`,
-				);
-			}
-
-			peer.log("Connected and handshaked");
-			return peer;
-		} catch (e) {
-			const existing = this.failedPeers.get(key);
-			if (existing) {
-				existing.count++;
-				existing.lastFailed = Date.now();
-			} else {
-				this.failedPeers.set(key, { count: 1, lastFailed: Date.now() });
-			}
-			peer.logError("Failed to connect:", e);
-			return null;
+			peer = newPeer;
 		}
+
+		return peer;
 	}
 
 	private isValidPeerAddress(host: string): boolean {
@@ -309,47 +306,32 @@ export class PeerManager {
 		return false;
 	}
 
-	private async discoverFromDNS(seed: PeerSeed, maxPeers = 10): Promise<void> {
-		try {
-			const addrs = await Deno.resolveDns(seed.seedHost, "A");
-			const addresses = addrs.slice(0, maxPeers).map((addr) => {
-				const key = `${addr}:${seed.peerPort}`;
-				this.knownPeers.add(key);
-				return { host: addr, port: seed.peerPort };
-			});
-
-			// Try each discovered address one at a time
-			for (const address of addresses) {
-				if (this.connectedPeers.size >= this.maxConnections) break;
-				await this.connectPeer(address);
-			}
-		} catch (e) {
-			console.error(`Failed to discover peers from ${seed.seedHost}:`, e);
+	private async discoverFromDNS(seed: PeerSeed): Promise<void> {
+		const addrs = await Deno.resolveDns(seed.seedHost, "A");
+		for (const ip of addrs) {
+			if (this.connectedPeers.size >= this.maxConnections) break;
+			const address: Peer.Address = { host: ip, port: seed.peerPort };
+			this.addKnownPeer(address);
 		}
 	}
 
-	private async requestPeerAddresses(): Promise<void> {
-		const now = Date.now();
-		const minInterval = 2 * 60 * 1000;
-
-		const peer: Peer | undefined = this.connectedPeers.values()
-			.filter((peer) => now - (this.lastAddrRequest.get(peer) || 0) > minInterval)
-			.next().value;
-
-		if (!peer) {
-			console.log("No peers available to request addresses from (all recently asked)");
-			return;
+	private async discoverFromPeer(peer: Peer): Promise<boolean> {
+		const lastRequest = this.lastAddressRequest.get(peer);
+		if (lastRequest && Date.now() - lastRequest < 10 * 60 * 1000) {
+			peer.log("📬 Recently requested addresses, skipping");
+			return false;
 		}
-		this.lastAddrRequest.set(peer, now);
-
+		this.lastAddressRequest.set(peer, Date.now());
 		const addrs = await getAddr(peer);
-		const maxAge = 24 * 60 * 60 * 1000;
 
+		const now = Date.now();
+		const maxAge = 24 * 60 * 60 * 1000;
 		let added = 0;
 		let stale = 0;
 		let rejected = 0;
 
 		for (const addr of addrs.addresses) {
+			// Filter out stale addresses
 			if (now - addr.timestamp > maxAge) {
 				stale++;
 				continue;
@@ -363,7 +345,9 @@ export class PeerManager {
 		}
 
 		peer.log(
-			`📬 Received ${addrs.addresses.length} addresses: ${added} added, ${stale} stale, ${rejected} rejected`,
+			`📬 First connect: ${addrs.addresses.length} addresses: ${added} added, ${stale} stale, ${rejected} rejected`,
 		);
+
+		return true;
 	}
 }
