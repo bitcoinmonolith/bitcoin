@@ -3,6 +3,7 @@ import { dirname, join } from "@std/path";
 import { BlockHeightIndex } from "./BlockHeightIndex.ts";
 import { StoredBlock } from "./primitives/StoredBlock.ts";
 import { readFileExact } from "../fs.ts";
+import { MAX_BLOCK_WEIGHT } from "../constants.ts";
 
 export namespace BlockStore {
 	export type Init = {
@@ -123,7 +124,7 @@ export class BlockStore {
 			throw new Error(`No block found at height ${height}`);
 		}
 
-		const next4Mb = await this.read(pointer, 4 * 1024 * 1024);
+		const next4Mb = await this.read(pointer, MAX_BLOCK_WEIGHT);
 		const [block] = StoredBlock.decode(next4Mb);
 		return block;
 	}

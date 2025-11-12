@@ -69,4 +69,21 @@ while (true) {
 	// TODO: StoreBlock.fromBlock() shouldnt be there, its not just converting formats, it has pointer logic.
 	// TODO: then the whole shit needs a refactor. mostly the `chain/` side
 	// TODO: just make it make more sense as a codebase.
+	// TODO: block download batching can be based on download size not block count. earlier blocks are way too small.
+	// TODO: we need a general purpose walking abstraction for the chain. (download, verify hash, verify rules and utxos)
+	// TODO: so basically 3 of these jobs should run in parallel independed from each other. but wait for each-other.
+	// TODO: and download and verify hash should have a priority queue as well. so for example if we are showing the block in the explorer we should fetch it first.
+	// TODO: if the priority queue is empty, it just uses the cursor or something. it needs to walk to chain find not downloaded or not verified blocks.
+	// TODO: maybe we can store per block data on the header store? like for example the pointer for the actual block.
+	// TODO: then the order we download the blocks doesnt matter because we know where each one is at.
+	// TODO: but then we cant do a simple truncate if blocks are mixed and not ordered.
+	// TODO: hmm i think we can still mix the blocks but then we need to order them while verifying sequentially?
+	// TODO: so we know all the mixed chunks are invalid because they are higher than sorted height.
+	// TODO: as we sequentially verify blocks, we can check if one is already downloaded in the mixed chunks.
+	// TODO: if it is, we can just use that one and remove it from the mixed chunks. (but we cant really remove it from the mixed chunks easily)
+	// TODO: hmm maybe idk. need to think about this more. either way we need two different storage types for blocks. (sorted and unsorted)
+	// TODO: sorted ones are verified fully. unsorted ones are just downloaded and maybe verified partially (hash only).
+	// TODO: since unsorted ones will be the ones that are downloaded on demand, there wont be many of them, so we dont have to chunk them.
+	// TODO: we dont need height index, we can just store height based stuff inside the header store.
+	// TODO: these are really simple things but code doesnt look simple, the code should reflect the simplicity of the idea.
 }

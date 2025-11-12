@@ -4,8 +4,7 @@ import { BlockHeader } from "~/lib/satoshi/primitives/BlockHeader.ts";
 
 export const BASE_DATA_DIR = resolve("./data");
 
-export const MAX_BLOCK_BYTES = 4 * 1024 * 1024; // 4 MiB
-export const MAX_BLOCK_WEIGHT = MAX_BLOCK_BYTES;
+export const MAX_BLOCK_WEIGHT = 4 * 1024 * 1024;
 export const WITNESS_DATA_WEIGHT = 1;
 export const NON_WITNESS_DATA_WEIGHT = 4;
 

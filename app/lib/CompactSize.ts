@@ -1,5 +1,5 @@
 import { BytesView } from "~/lib/BytesView.ts";
-import { MAX_BLOCK_BYTES } from "~/lib/constants.ts";
+import { MAX_BLOCK_WEIGHT } from "~/lib/constants.ts";
 
 /*
     Since max size we are going to handle is 4 million, we can use number type safely here.
@@ -41,7 +41,7 @@ export namespace CompactSize {
 		}
 		const val = new BytesView(bytes, offset + 1, 8).getBigUint64(0, true);
 		if (val < 0x100000000n) throw new Error("non-canonical CompactSize");
-		if (val > BigInt(MAX_BLOCK_BYTES)) throw new Error("CompactSize too large");
+		if (val > BigInt(MAX_BLOCK_WEIGHT)) throw new Error("CompactSize too large");
 		return [Number(val), offset + 9];
 	}
 }
