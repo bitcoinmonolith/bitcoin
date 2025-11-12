@@ -1,7 +1,7 @@
 import { Codec } from "@nomadshiba/codec";
 import { BytesView } from "~/lib/BytesView.ts";
-import { PeerMessage } from "~/lib/satoshi/p2p/PeerMessage.ts";
 import { CompactSize } from "~/lib/CompactSize.ts";
+import { PeerMessage } from "~/lib/satoshi/p2p/PeerMessage.ts";
 
 // inventory type codes from protocol
 const typeKeyToByte = {
