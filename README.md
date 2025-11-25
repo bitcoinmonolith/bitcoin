@@ -14,17 +14,17 @@ We are not trying to change Bitcoin. We are simply giving you a way to use Bitco
 
 ---
 
-## Update: I changed my mind
+## ~~Update: I changed my mind~~
 
-I’ve been working on this for a while, and the more I build, the more I feel this project would be even better (and more understandable) with ECS and game loops.
+~~I’ve been working on this for a while, and the more I build, the more I feel this project would be even better (and more understandable) with ECS and game loops.~~
 
-**Current plan:**
+~~**Current plan:**~~
 
-1. First, make the storage optimization work with the current Deno/TypeScript codebase and actually get a full node that takes significantly less disk space.
-2. After that succeeds, I’ll move the implementation to modern C# using an ECS library (https://github.com/Felid-Force-Studios/StaticEcs).
+~~1. First, make the storage optimization work with the current Deno/TypeScript codebase and actually get a full node that takes significantly less disk space.~~
+~~2. After that succeeds, I’ll move the implementation to modern C# using an ECS library (https://github.com/Felid-Force-Studios/StaticEcs).~~
 
-Deno/TS is for fast iteration and proving the storage model.  
-C# + ECS will be for long-term performance, parallelism, and game-loop style logic.
+~~Deno/TS is for fast iteration and proving the storage model.  
+C# + ECS will be for long-term performance, parallelism, and game-loop style logic.~~
 
 ---
 
