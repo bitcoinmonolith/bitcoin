@@ -1,5 +1,7 @@
 # BitcoinMonolith
 
+> *maybe rename it to bitcoinatlas?*
+
 Experimental Bitcoin node and client. Still a work in progress, **not** ready for real use yet.
 
 For learning, hacking, or just messing around (for now). Still way too early.
